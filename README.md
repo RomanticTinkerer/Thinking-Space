@@ -8,7 +8,7 @@ Essential Space turns a button press into a memory: a screenshot, a voice note, 
 
 Make it your default assistant, then hold the power button (or whatever gesture your phone uses for the assistant). The screen is captured and shown in a frame with three actions:
 
-- **Edit**: markup (pen, highlighter, blur, mosaic, text) and crop, using [ReFra](https://github.com/IacobIonut01/ReFra)'s editor.
+- **Edit**: built on [ReFra](https://github.com/IacobIonut01/ReFra)'s editor. Adjust sliders (brightness, contrast, warmth, highlights and more), 21 filters with an intensity slider, markup (pen, highlighter, blur, mosaic, text) and crop. The Smart tab runs AI models on your phone: tap a subject to cut it out or blur the background, or blur every face in one go.
 - **Record**: attach a voice note. Stop, or reset to try again, with a live level meter.
 - **Save**: store it. Nothing is written until you save, and the trash icon discards the capture.
 
