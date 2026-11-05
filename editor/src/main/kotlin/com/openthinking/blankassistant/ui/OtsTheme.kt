@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -26,70 +27,99 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import com.dot.gallery.R
 
-/** SharedPreferences "app" key: follow the wallpaper's colours (Android 12+). On by default. */
-const val DYNAMIC_COLOR_KEY = "dynamic_color"
-
 fun appPrefs(context: Context): SharedPreferences = context.applicationContext.getSharedPreferences("app", Context.MODE_PRIVATE)
 
-/** Roboto Flex is one variable font file; each weight is the same file with a different `wght` setting. */
-private val RobotoFlex = FontFamily(
-    listOf(300, 400, 500, 600, 700, 800).map { w ->
-        Font(R.font.roboto_flex, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
-    },
-)
+/** One font file (Roboto Flex is variable); each text style picks its own axes from [DesignConfig.Type]. */
+private fun family(f: DesignConfig.Face, weightBoost: Int = 0): FontFamily {
+    val w = (f.weight + weightBoost).coerceIn(100, 1000)
+    return FontFamily(
+        Font(
+            R.font.roboto_flex,
+            FontWeight(w),
+            variationSettings = FontVariation.Settings(
+                FontVariation.weight(w),
+                FontVariation.width(f.width),
+                FontVariation.Setting("opsz", f.opticalSize),
+            ),
+        )
+    )
+}
+
+private fun TextStyle.face(f: DesignConfig.Face, boost: Int = 0) =
+    copy(fontFamily = family(f, boost), fontWeight = FontWeight((f.weight + boost).coerceIn(100, 1000)))
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 private fun robotoFlexTypography(): Typography {
     val t = Typography()
-    fun TextStyle.flex() = copy(fontFamily = RobotoFlex)
+    val f = DesignConfig.Type
+    val b = DesignConfig.Type.emphasisBoost
     return Typography(
-        displayLarge = t.displayLarge.flex(), displayMedium = t.displayMedium.flex(), displaySmall = t.displaySmall.flex(),
-        headlineLarge = t.headlineLarge.flex(), headlineMedium = t.headlineMedium.flex(), headlineSmall = t.headlineSmall.flex(),
-        titleLarge = t.titleLarge.flex(), titleMedium = t.titleMedium.flex(), titleSmall = t.titleSmall.flex(),
-        bodyLarge = t.bodyLarge.flex(), bodyMedium = t.bodyMedium.flex(), bodySmall = t.bodySmall.flex(),
-        labelLarge = t.labelLarge.flex(), labelMedium = t.labelMedium.flex(), labelSmall = t.labelSmall.flex(),
-        displayLargeEmphasized = t.displayLargeEmphasized.flex(), displayMediumEmphasized = t.displayMediumEmphasized.flex(),
-        displaySmallEmphasized = t.displaySmallEmphasized.flex(),
-        headlineLargeEmphasized = t.headlineLargeEmphasized.flex(), headlineMediumEmphasized = t.headlineMediumEmphasized.flex(),
-        headlineSmallEmphasized = t.headlineSmallEmphasized.flex(),
-        titleLargeEmphasized = t.titleLargeEmphasized.flex(), titleMediumEmphasized = t.titleMediumEmphasized.flex(),
-        titleSmallEmphasized = t.titleSmallEmphasized.flex(),
-        bodyLargeEmphasized = t.bodyLargeEmphasized.flex(), bodyMediumEmphasized = t.bodyMediumEmphasized.flex(),
-        bodySmallEmphasized = t.bodySmallEmphasized.flex(),
-        labelLargeEmphasized = t.labelLargeEmphasized.flex(), labelMediumEmphasized = t.labelMediumEmphasized.flex(),
-        labelSmallEmphasized = t.labelSmallEmphasized.flex(),
+        displayLarge = t.displayLarge.face(f.displayLarge), displayMedium = t.displayMedium.face(f.displayMedium),
+        displaySmall = t.displaySmall.face(f.displaySmall),
+        headlineLarge = t.headlineLarge.face(f.headlineLarge), headlineMedium = t.headlineMedium.face(f.headlineMedium),
+        headlineSmall = t.headlineSmall.face(f.headlineSmall),
+        titleLarge = t.titleLarge.face(f.titleLarge), titleMedium = t.titleMedium.face(f.titleMedium),
+        titleSmall = t.titleSmall.face(f.titleSmall),
+        bodyLarge = t.bodyLarge.face(f.bodyLarge), bodyMedium = t.bodyMedium.face(f.bodyMedium),
+        bodySmall = t.bodySmall.face(f.bodySmall),
+        labelLarge = t.labelLarge.face(f.labelLarge), labelMedium = t.labelMedium.face(f.labelMedium),
+        labelSmall = t.labelSmall.face(f.labelSmall),
+        displayLargeEmphasized = t.displayLargeEmphasized.face(f.displayLarge, b),
+        displayMediumEmphasized = t.displayMediumEmphasized.face(f.displayMedium, b),
+        displaySmallEmphasized = t.displaySmallEmphasized.face(f.displaySmall, b),
+        headlineLargeEmphasized = t.headlineLargeEmphasized.face(f.headlineLarge, b),
+        headlineMediumEmphasized = t.headlineMediumEmphasized.face(f.headlineMedium, b),
+        headlineSmallEmphasized = t.headlineSmallEmphasized.face(f.headlineSmall, b),
+        titleLargeEmphasized = t.titleLargeEmphasized.face(f.titleLarge, b),
+        titleMediumEmphasized = t.titleMediumEmphasized.face(f.titleMedium, b),
+        titleSmallEmphasized = t.titleSmallEmphasized.face(f.titleSmall, b),
+        bodyLargeEmphasized = t.bodyLargeEmphasized.face(f.bodyLarge, b),
+        bodyMediumEmphasized = t.bodyMediumEmphasized.face(f.bodyMedium, b),
+        bodySmallEmphasized = t.bodySmallEmphasized.face(f.bodySmall, b),
+        labelLargeEmphasized = t.labelLargeEmphasized.face(f.labelLarge, b),
+        labelMediumEmphasized = t.labelMediumEmphasized.face(f.labelMedium, b),
+        labelSmallEmphasized = t.labelSmallEmphasized.face(f.labelSmall, b),
     )
 }
 
 /**
- * Material 3 Expressive: spring motion, expressive shapes, Roboto Flex type. Colours follow the
- * wallpaper (Material You) on Android 12+ unless switched off in Settings, light/dark per system
- * (or [forceDark], which the editor uses). Lives in the editor module so the editor and the app share it.
+ * Material 3 Expressive with the values from [DesignConfig]. Colours follow the wallpaper (Material You,
+ * Android 12+) unless switched off; light, dark or system comes from Settings, and dark can go pure black.
+ * [forceDark] overrides the mode (the editor uses it). Lives in the editor module so the app shares it.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun OtsTheme(forceDark: Boolean? = null, content: @Composable () -> Unit) {
-    val dark = forceDark ?: isSystemInDarkTheme()
     val context = LocalContext.current
     val prefs = remember { appPrefs(context) }
-    var dynamic by remember { mutableStateOf(prefs.getBoolean(DYNAMIC_COLOR_KEY, true)) }
-    // Settings flips the switch from another activity; follow it live.
+    var settings by remember { mutableStateOf(DesignSettings.read(prefs)) }
+    // Settings changes things from another activity; follow it live.
     DisposableEffect(prefs) {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-            if (key == DYNAMIC_COLOR_KEY) dynamic = p.getBoolean(DYNAMIC_COLOR_KEY, true)
-        }
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, _ -> settings = DesignSettings.read(p) }
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    val colors = when {
-        dynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+    val dark = forceDark ?: when (settings.mode) {
+        DesignConfig.ThemeMode.System -> isSystemInDarkTheme()
+        DesignConfig.ThemeMode.Light -> false
+        DesignConfig.ThemeMode.Dark -> true
+    }
+    val base = when {
+        settings.dynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         dark -> darkColorScheme()
         else -> expressiveLightColorScheme()
     }
+    val colors = if (dark && settings.pureBlack) {
+        base.copy(
+            background = Color.Black, surface = Color.Black,
+            surfaceContainerLowest = Color.Black, surfaceContainerLow = Color.Black,
+        )
+    } else base
     MaterialExpressiveTheme(
         colorScheme = colors,
         motionScheme = MotionScheme.expressive(),
+        shapes = DesignConfig.shapes,
         typography = remember { robotoFlexTypography() },
         content = content,
     )
