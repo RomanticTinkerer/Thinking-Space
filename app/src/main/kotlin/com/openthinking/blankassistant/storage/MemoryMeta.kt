@@ -9,6 +9,13 @@ import android.content.Context
 class MemoryMeta(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("memory_meta", Context.MODE_PRIVATE)
 
+    init {
+        // Text from older readers is poorer. Drop it so those screenshots get scanned again.
+        // Bump the "ocr3:" key whenever the reader gets better.
+        prefs.all.keys.filter { it.startsWith("ocr") && !it.startsWith("ocr3:") }.takeIf { it.isNotEmpty() }
+            ?.let { old -> prefs.edit().apply { old.forEach(::remove) }.apply() }
+    }
+
     fun caption(base: String): String = prefs.getString("cap:$base", "").orEmpty()
 
     fun setCaption(base: String, text: String) = prefs.edit().apply {
@@ -29,10 +36,10 @@ class MemoryMeta(context: Context) {
     }.apply()
 
     /** Text OCR found in the image. null = not scanned yet, "" = scanned and nothing found. */
-    fun ocr(base: String): String? = prefs.getString("ocr:$base", null)
+    fun ocr(base: String): String? = prefs.getString("ocr3:$base", null)
 
-    fun setOcr(base: String, text: String) = prefs.edit().putString("ocr:$base", text).apply()
+    fun setOcr(base: String, text: String) = prefs.edit().putString("ocr3:$base", text).apply()
 
     fun forget(base: String) =
-        prefs.edit().remove("cap:$base").remove("pin:$base").remove("rem:$base").remove("ocr:$base").apply()
+        prefs.edit().remove("cap:$base").remove("pin:$base").remove("rem:$base").remove("ocr3:$base").apply()
 }
