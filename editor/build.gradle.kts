@@ -40,6 +40,8 @@ dependencies {
     implementation(libs.compose.activity)
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    // On-device AI (MobileSAM cutout, UltraFace face blur). MIT licensed.
+    implementation(libs.onnxruntime.android)
 
     implementation(project(":cropper"))
     implementation(project(":gesture"))

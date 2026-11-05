@@ -13,6 +13,9 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        // ONNX Runtime and Tesseract ship a native library per CPU type. Phones are arm64; skipping the
+        // rest saves about 100 MB. Add "armeabi-v7a" or "x86_64" here for old phones or an emulator.
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     buildTypes {
