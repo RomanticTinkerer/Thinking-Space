@@ -24,7 +24,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import com.openthinking.blankassistant.R
+import com.dot.gallery.R
 
 /** SharedPreferences "app" key: follow the wallpaper's colours (Android 12+). On by default. */
 const val DYNAMIC_COLOR_KEY = "dynamic_color"
@@ -63,12 +63,13 @@ private fun robotoFlexTypography(): Typography {
 
 /**
  * Material 3 Expressive: spring motion, expressive shapes, Roboto Flex type. Colours follow the
- * wallpaper (Material You) on Android 12+ unless switched off in Settings, light/dark per system.
+ * wallpaper (Material You) on Android 12+ unless switched off in Settings, light/dark per system
+ * (or [forceDark], which the editor uses). Lives in the editor module so the editor and the app share it.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun OtsTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun OtsTheme(forceDark: Boolean? = null, content: @Composable () -> Unit) {
+    val dark = forceDark ?: isSystemInDarkTheme()
     val context = LocalContext.current
     val prefs = remember { appPrefs(context) }
     var dynamic by remember { mutableStateOf(prefs.getBoolean(DYNAMIC_COLOR_KEY, true)) }
