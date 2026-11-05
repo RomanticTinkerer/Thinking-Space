@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package com.openthinking.blankassistant
 
 import android.Manifest
@@ -16,6 +18,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -43,7 +46,10 @@ import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FloatingToolbarDefaults
+import androidx.compose.material3.HorizontalFloatingToolbar
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -280,17 +286,6 @@ private fun ViewerScreen(
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                     }
                 },
-                actions = {
-                    IconButton(onClick = onPin) {
-                        Icon(
-                            if (pinned) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                            contentDescription = if (pinned) "Unpin" else "Pin",
-                        )
-                    }
-                    IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, contentDescription = "Share") }
-                    IconButton(onClick = onEdit) { Icon(Icons.Rounded.Edit, contentDescription = "Edit") }
-                    IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, contentDescription = "Delete") }
-                },
             )
         },
     ) { padding ->
@@ -312,7 +307,7 @@ private fun ViewerScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
+                shape = MaterialTheme.shapes.extraLargeIncreased,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
                 image?.let {
@@ -332,20 +327,34 @@ private fun ViewerScreen(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Add a note") },
                 maxLines = 3,
-                shape = RoundedCornerShape(24.dp),
+                shape = MaterialTheme.shapes.extraLarge,
             )
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ReminderChip(remindAt, onRemind)
-                AssistChip(
-                    onClick = { showText = true; onReadText(false) },
-                    leadingIcon = { Icon(Icons.Rounded.TextFields, contentDescription = null) },
-                    label = { Text("Text in image") },
-                )
-            }
+            ReminderChip(remindAt, onRemind)
             if (hasNote) NoteCard(player)
+            // Floating toolbar: the main actions, with Edit as the lifted primary one.
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                HorizontalFloatingToolbar(
+                    expanded = true,
+                    colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
+                    floatingActionButton = {
+                        FloatingToolbarDefaults.VibrantFloatingActionButton(onClick = onEdit) {
+                            Icon(Icons.Rounded.Edit, contentDescription = "Edit")
+                        }
+                    },
+                ) {
+                    IconButton(onClick = onPin) {
+                        Icon(
+                            if (pinned) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                            contentDescription = if (pinned) "Unpin" else "Pin",
+                        )
+                    }
+                    IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, contentDescription = "Share") }
+                    IconButton(onClick = { showText = true; onReadText(false) }) {
+                        Icon(Icons.Rounded.TextFields, contentDescription = "Text in image")
+                    }
+                    IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, contentDescription = "Delete") }
+                }
+            }
         }
     }
 
@@ -375,10 +384,10 @@ private fun TextSheet(text: String?, busy: Boolean, onReadAgain: () -> Unit, onD
                 .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Text in this screenshot", style = MaterialTheme.typography.titleLarge)
+            Text("Text in this screenshot", style = MaterialTheme.typography.titleLargeEmphasized)
             when {
                 busy -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
+                    LoadingIndicator(Modifier.size(40.dp))
                     Text("Reading\u2026")
                 }
                 text == null -> Text("Couldn\u2019t read this image.")
@@ -470,7 +479,7 @@ private fun NoteCard(player: NotePlayer) {
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLargeIncreased,
         color = MaterialTheme.colorScheme.secondaryContainer,
     ) {
         Row(
@@ -485,7 +494,7 @@ private fun NoteCard(player: NotePlayer) {
                 )
             }
             Column(Modifier.weight(1f)) {
-                Text("Voice note", style = MaterialTheme.typography.titleSmall)
+                Text("Voice note", style = MaterialTheme.typography.titleSmallEmphasized)
                 Slider(
                     value = player.position.toFloat(),
                     onValueChange = { player.seekTo(it.toInt()) },
