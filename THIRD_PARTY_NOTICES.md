@@ -59,6 +59,13 @@ Used to read text from screenshots, fully offline.
 - **tessdata_fast** `eng.traineddata` (https://github.com/tesseract-ocr/tessdata_fast), Apache-2.0. Unmodified, shipped in
   `app/src/main/assets/tessdata/`. License text: `licenses/LICENSE-tessdata_fast.txt`.
 
+## Roboto Flex — SIL Open Font License 1.1
+The app's typeface, shipped as `app/src/main/res/font/roboto_flex.ttf` (the variable font, unmodified).
+
+- Upstream: https://github.com/TypeNetwork/Roboto-Flex, copy taken from https://github.com/google/fonts (`ofl/robotoflex`)
+- Copyright 2017 The Roboto Flex Project Authors
+- License text: `licenses/OFL-RobotoFlex.txt`
+
 ## Recording foreground service
 `app/.../audio/RecordingService.kt` follows the approach used by Fossify Voice Recorder
 (https://github.com/FossifyOrg/Voice-Recorder) and Dimowner/AudioRecorder: record inside a foreground
