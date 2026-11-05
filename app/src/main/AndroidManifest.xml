@@ -17,7 +17,7 @@
         android:theme="@android:style/Theme.DeviceDefault.DayNight">
 
         <!--
-            Setup screen. It also declares ACTION_ASSIST, which the Android
+            Settings screen. It also declares ACTION_ASSIST, which the Android
             ASSISTANT role requires, and doubles as the voice-interaction
             settings page (see res/xml/interaction_service.xml).
         -->
@@ -30,7 +30,7 @@
             </intent-filter>
         </activity>
 
-        <!-- App home. Setup lives behind the "Setup" button (MainActivity). -->
+        <!-- App home. Settings live behind the gear in its top right corner (MainActivity). -->
         <activity
             android:name=".GalleryActivity"
             android:exported="true">

@@ -40,6 +40,9 @@ class MemoryMeta(context: Context) {
 
     fun setOcr(base: String, text: String) = prefs.edit().putString("ocr3:$base", text).apply()
 
+    /** Forget all OCR text, so the gallery reads every screenshot again. */
+    fun clearOcr() = prefs.edit().apply { prefs.all.keys.filter { it.startsWith("ocr3:") }.forEach(::remove) }.apply()
+
     fun forget(base: String) =
         prefs.edit().remove("cap:$base").remove("pin:$base").remove("rem:$base").remove("ocr3:$base").apply()
 }
