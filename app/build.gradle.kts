@@ -37,6 +37,8 @@ dependencies {
     // Vendored ReFra markup + crop editor. Launched by class name; its manifest merges in.
     implementation(project(":editor"))
     implementation("com.jakewharton.timber:timber:5.0.1")
+    // Offline OCR: Tesseract 5 (Apache-2.0) through Tesseract4Android (Apache-2.0).
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
     // Gallery + viewer UI: Material 3 with wallpaper-derived (dynamic) colours.
     implementation(libs.compose.foundation)
     implementation(libs.compose.ui)
