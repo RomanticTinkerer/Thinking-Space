@@ -50,6 +50,15 @@ vendored sources stay byte-comparable with upstream.
 
 Toolchain versions in `gradle/libs.versions.toml` (AGP, Kotlin, Compose) match ReFra's for the same reason.
 
+## Tesseract OCR — Apache License 2.0
+Used to read text from screenshots, fully offline.
+
+- **Tesseract4Android** 4.9.0 (https://github.com/adaptech-cz/Tesseract4Android), Apache-2.0. Pulled in as a Gradle
+  dependency from JitPack, not vendored. It is a fork of tess-two and bundles Tesseract 5.5.1 (Apache-2.0),
+  Leptonica 1.85.0 (BSD-2-Clause), libjpeg 9f and libpng 1.6.48 (both permissive).
+- **tessdata_fast** `eng.traineddata` (https://github.com/tesseract-ocr/tessdata_fast), Apache-2.0. Unmodified, shipped in
+  `app/src/main/assets/tessdata/`. License text: `licenses/LICENSE-tessdata_fast.txt`.
+
 ## Recording foreground service
 `app/.../audio/RecordingService.kt` follows the approach used by Fossify Voice Recorder
 (https://github.com/FossifyOrg/Voice-Recorder) and Dimowner/AudioRecorder: record inside a foreground

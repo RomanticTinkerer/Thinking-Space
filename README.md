@@ -21,11 +21,12 @@ Everything lands in the shared `Pictures/OpenThinking Space Screenshots` album, 
 | Essential Key capture | Default-assistant gesture (power button hold) |
 | Screenshot with a voice note | Yes, pinned to the screenshot |
 | Notes on a memory | Text note on every screenshot, searchable |
+| Text in screenshots | Offline OCR (Tesseract, English). Search finds words inside screenshots, and "Text in image" lets you copy them |
 | Collections | Pinned and Voice notes filters |
 | Reminders | "Remind me" on any screenshot (notification) |
 | Share, multi-select | Share, long-press to pin or delete several |
 
-Not here yet: AI summaries and task extraction, text search inside screenshots (OCR), voice transcription, standalone voice memos, widgets and backup. They need a model, and the aim is to add them on-device or not at all.
+Not here yet: AI summaries and task extraction, voice transcription, OCR in languages other than English, standalone voice memos, widgets and backup. They need a model, and the aim is to add them on-device or not at all.
 
 ## Build
 
