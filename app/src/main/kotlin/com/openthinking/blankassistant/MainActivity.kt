@@ -29,12 +29,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.TextFields
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -45,6 +47,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
@@ -60,7 +63,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.openthinking.blankassistant.storage.MemoryMeta
-import com.openthinking.blankassistant.ui.DYNAMIC_COLOR_KEY
+import com.openthinking.blankassistant.ui.DesignConfig
+import com.openthinking.blankassistant.ui.DesignSettings
 import com.openthinking.blankassistant.ui.OtsTheme
 import com.openthinking.blankassistant.ui.appPrefs
 
@@ -125,7 +129,9 @@ private fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val prefs = remember { appPrefs(context) }
-    var dynamic by remember { mutableStateOf(prefs.getBoolean(DYNAMIC_COLOR_KEY, true)) }
+    var dynamic by remember { mutableStateOf(prefs.getBoolean(DesignConfig.KEY_DYNAMIC, DesignConfig.DEFAULT_DYNAMIC)) }
+    var mode by remember { mutableStateOf(DesignSettings.read(prefs).mode) }
+    var pureBlack by remember { mutableStateOf(prefs.getBoolean(DesignConfig.KEY_PURE_BLACK, DesignConfig.DEFAULT_PURE_BLACK)) }
     var rescanned by remember { mutableStateOf(false) }
     val canDynamic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
@@ -185,10 +191,21 @@ private fun SettingsScreen(
                 Section(
                     "Appearance",
                     {
+                        ThemeModeRow(mode) { mode = it; prefs.edit().putString(DesignConfig.KEY_MODE, it.name).apply() }
+                    },
+                    {
+                        SettingRow(
+                            Icons.Rounded.DarkMode, "Pure black",
+                            "Uses true black in dark mode. Saves battery on OLED screens.",
+                            onClick = { pureBlack = !pureBlack; prefs.edit().putBoolean(DesignConfig.KEY_PURE_BLACK, pureBlack).apply() },
+                            trailing = { Switch(checked = pureBlack, onCheckedChange = null) },
+                        )
+                    },
+                    {
                         SettingRow(
                             Icons.Rounded.Palette, "Wallpaper colours",
                             if (canDynamic) "Colours follow your wallpaper." else "Needs Android 12 or later.",
-                            onClick = if (canDynamic) ({ dynamic = !dynamic; prefs.edit().putBoolean(DYNAMIC_COLOR_KEY, dynamic).apply() }) else null,
+                            onClick = if (canDynamic) ({ dynamic = !dynamic; prefs.edit().putBoolean(DesignConfig.KEY_DYNAMIC, dynamic).apply() }) else null,
                             trailing = {
                                 Switch(
                                     checked = dynamic && canDynamic,
@@ -231,6 +248,28 @@ private fun SettingsScreen(
     }
 }
 
+@Composable
+private fun ThemeModeRow(mode: DesignConfig.ThemeMode, onChange: (DesignConfig.ThemeMode) -> Unit) {
+    val modes = DesignConfig.ThemeMode.entries
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Theme", style = MaterialTheme.typography.titleMediumEmphasized)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+            modes.forEachIndexed { i, m ->
+                ToggleButton(
+                    checked = mode == m,
+                    onCheckedChange = { onChange(m) },
+                    modifier = Modifier.weight(1f),
+                    shapes = when (i) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        modes.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    },
+                ) { Text(m.label) }
+            }
+        }
+    }
+}
+
 /** A titled group of rows. Outer corners are big, the corners between rows are small, so they read as one list. */
 @Composable
 private fun Section(title: String, vararg rows: @Composable () -> Unit) {
@@ -242,8 +281,8 @@ private fun Section(title: String, vararg rows: @Composable () -> Unit) {
             modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
         )
         rows.forEachIndexed { i, row ->
-            val top = if (i == 0) 28.dp else 6.dp
-            val bottom = if (i == rows.lastIndex) 28.dp else 6.dp
+            val top = if (i == 0) DesignConfig.heroCorner else DesignConfig.joinCorner
+            val bottom = if (i == rows.lastIndex) DesignConfig.heroCorner else DesignConfig.joinCorner
             Surface(
                 shape = RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
