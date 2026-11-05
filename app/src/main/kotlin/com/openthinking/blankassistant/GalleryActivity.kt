@@ -67,6 +67,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -83,6 +84,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.openthinking.blankassistant.ocr.TextReader
 import com.openthinking.blankassistant.reminder.Reminders
 import com.openthinking.blankassistant.storage.CaptureStore
 import com.openthinking.blankassistant.storage.CaptureStore.Shot
@@ -91,6 +93,7 @@ import com.openthinking.blankassistant.ui.OtsTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Home screen: your memories (screenshots with optional voice notes and text notes) as a spacious
@@ -101,8 +104,11 @@ class GalleryActivity : ComponentActivity() {
 
     private val io = Executors.newSingleThreadExecutor()
     private val thumbs = LruCache<Uri, ImageBitmap>(80)
+    private val ocrIo = Executors.newSingleThreadExecutor()
+    private val scanning = AtomicBoolean(false)
     private var shots by mutableStateOf<List<Shot>?>(null)
     private var isDefault by mutableStateOf(true)
+    private var unscanned by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -114,6 +120,7 @@ class GalleryActivity : ComponentActivity() {
                 }
                 GalleryScreen(
                     shots = shots,
+                    unscanned = unscanned,
                     isDefault = isDefault,
                     loadThumb = ::loadThumb,
                     onOpen = { startActivity(Intent(this, ViewerActivity::class.java).setData(it.uri)) },
@@ -158,13 +165,55 @@ class GalleryActivity : ComponentActivity() {
     private fun reload() {
         val meta = MemoryMeta(this)
         val list = CaptureStore.listShots(this)
-            .map { it.copy(caption = meta.caption(it.baseName), pinned = meta.pinned(it.baseName)) }
+            .map {
+                it.copy(
+                    caption = meta.caption(it.baseName),
+                    pinned = meta.pinned(it.baseName),
+                    ocrText = meta.ocr(it.baseName).orEmpty(),
+                )
+            }
             .sortedByDescending { it.pinned } // stable: newest first inside each group
         runOnUiThread { if (!isDestroyed) shots = list }
+        scanText(list)
+    }
+
+    /**
+     * Reads the text of every screenshot that has not been scanned yet, newest first, one at a time.
+     * Results land in [MemoryMeta] so search can use them. Skipped if a scan is already running;
+     * the next reload picks up whatever is left.
+     */
+    private fun scanText(list: List<Shot>) {
+        val meta = MemoryMeta(this)
+        val todo = list.filter { meta.ocr(it.baseName) == null }
+        if (todo.isEmpty() || !scanning.compareAndSet(false, true)) return
+        runOnUiThread { unscanned = todo.size }
+        ocrIo.execute {
+            try {
+                TextReader(this).use { reader ->
+                    todo.forEachIndexed { i, shot ->
+                        if (isDestroyed) return@use
+                        // A screenshot we could not decode stays unscanned and is retried next time.
+                        TextReader.decode(this, shot.uri)?.let { bitmap ->
+                            val text = reader.read(bitmap)
+                            bitmap.recycle()
+                            meta.setOcr(shot.baseName, text)
+                            runOnUiThread {
+                                shots = shots?.map { if (it.baseName == shot.baseName) it.copy(ocrText = text) else it }
+                            }
+                        }
+                        runOnUiThread { unscanned = todo.size - i - 1 }
+                    }
+                }
+            } finally {
+                scanning.set(false)
+                runOnUiThread { unscanned = 0 }
+            }
+        }
     }
 
     override fun onDestroy() {
         io.shutdownNow()
+        ocrIo.shutdownNow()
         super.onDestroy()
     }
 
@@ -180,6 +229,7 @@ private enum class Filter(val label: String) { All("All"), Pinned("Pinned"), Voi
 @Composable
 private fun GalleryScreen(
     shots: List<Shot>?,
+    unscanned: Int,
     isDefault: Boolean,
     loadThumb: suspend (Uri) -> ImageBitmap?,
     onOpen: (Shot) -> Unit,
@@ -200,7 +250,9 @@ private fun GalleryScreen(
 
     val visible = shots.orEmpty().filter {
         (filter == Filter.All || (filter == Filter.Pinned && it.pinned) || (filter == Filter.Voice && it.noteUri != null)) &&
-            (query.isBlank() || it.caption.contains(query.trim(), ignoreCase = true))
+            (query.isBlank() ||
+                it.caption.contains(query.trim(), ignoreCase = true) ||
+                it.ocrText.contains(query.trim(), ignoreCase = true))
     }
 
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -263,10 +315,18 @@ private fun GalleryScreen(
                                 value = query,
                                 onValueChange = { query = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text("Search your notes") },
+                                placeholder = { Text("Search notes and text in screenshots") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(28.dp),
                             )
+                            if (unscanned > 0) {
+                                Text(
+                                    "Reading text in $unscanned screenshot${if (unscanned == 1) "" else "s"}\u2026",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                )
+                            }
                         }
                         Row(
                             modifier = Modifier.horizontalScroll(rememberScrollState()),

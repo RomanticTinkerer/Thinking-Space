@@ -3,7 +3,7 @@ package com.openthinking.blankassistant.storage
 import android.content.Context
 
 /**
- * Per-screenshot extras that MediaStore has no place for: a text note, a pin and a reminder time.
+ * Per-screenshot extras that MediaStore has no place for: a text note, a pin, a reminder time and the OCR text.
  * Keyed by the screenshot's base name (`Screenshot<N>`), which is unique inside the album.
  */
 class MemoryMeta(context: Context) {
@@ -28,5 +28,11 @@ class MemoryMeta(context: Context) {
         if (at > 0L) putLong("rem:$base", at) else remove("rem:$base")
     }.apply()
 
-    fun forget(base: String) = prefs.edit().remove("cap:$base").remove("pin:$base").remove("rem:$base").apply()
+    /** Text OCR found in the image. null = not scanned yet, "" = scanned and nothing found. */
+    fun ocr(base: String): String? = prefs.getString("ocr:$base", null)
+
+    fun setOcr(base: String, text: String) = prefs.edit().putString("ocr:$base", text).apply()
+
+    fun forget(base: String) =
+        prefs.edit().remove("cap:$base").remove("pin:$base").remove("rem:$base").remove("ocr:$base").apply()
 }
