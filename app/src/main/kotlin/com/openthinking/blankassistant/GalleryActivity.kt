@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package com.openthinking.blankassistant
 
 import android.content.Context
@@ -37,7 +39,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -51,20 +52,26 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -225,7 +232,6 @@ class GalleryActivity : ComponentActivity() {
 
 private enum class Filter(val label: String) { All("All"), Pinned("Pinned"), Voice("Voice notes") }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GalleryScreen(
     shots: List<Shot>?,
@@ -260,8 +266,13 @@ private fun GalleryScreen(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
-            LargeTopAppBar(
+            LargeFlexibleTopAppBar(
                 title = { Text(if (selecting) "${chosen.size} selected" else "OpenThinking Space") },
+                subtitle = {
+                    if (!selecting && !shots.isNullOrEmpty()) {
+                        Text(if (shots.size == 1) "1 memory" else "${shots.size} memories")
+                    }
+                },
                 navigationIcon = {
                     if (selecting) {
                         IconButton(onClick = { selected = emptySet() }) {
@@ -285,7 +296,9 @@ private fun GalleryScreen(
                         IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
                             Icon(Icons.Rounded.Search, contentDescription = "Search notes")
                         }
-                        IconButton(onClick = onSetup) { Icon(Icons.Rounded.Settings, contentDescription = "Setup") }
+                        FilledTonalIconButton(onClick = onSetup) {
+                            Icon(Icons.Rounded.Settings, contentDescription = "Settings")
+                        }
                     }
                 },
                 scrollBehavior = scroll,
@@ -317,23 +330,38 @@ private fun GalleryScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text("Search notes and text in screenshots") },
                                 singleLine = true,
-                                shape = RoundedCornerShape(28.dp),
+                                shape = CircleShape,
                             )
-                            if (unscanned > 0) {
-                                Text(
-                                    "Reading text in $unscanned screenshot${if (unscanned == 1) "" else "s"}\u2026",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                )
-                            }
                         }
+                        // Connected button group: the selected option morphs into a pill.
                         Row(
                             modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
                         ) {
-                            Filter.entries.forEach {
-                                FilterChip(selected = filter == it, onClick = { filter = it }, label = { Text(it.label) })
+                            Filter.entries.forEachIndexed { i, option ->
+                                ToggleButton(
+                                    checked = filter == option,
+                                    onCheckedChange = { filter = option },
+                                    shapes = when (i) {
+                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                        Filter.entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                    },
+                                ) { Text(option.label) }
+                            }
+                        }
+                        if (unscanned > 0) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                LoadingIndicator(Modifier.size(36.dp))
+                                Text(
+                                    "Reading text in $unscanned screenshot${if (unscanned == 1) "" else "s"}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }
@@ -385,16 +413,16 @@ private fun GalleryScreen(
 @Composable
 private fun DefaultBanner(onSetDefault: () -> Unit) {
     Card(
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLargeIncreased,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Make this your default assistant", style = MaterialTheme.typography.titleMedium)
+            Text("Make this your default assistant", style = MaterialTheme.typography.titleMediumEmphasized)
             Text(
                 "Then holding the power button captures the screen into OpenThinking Space.",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Button(onClick = onSetDefault) { Text("Set as default") }
+            Button(onClick = onSetDefault, shapes = ButtonDefaults.shapes()) { Text("Set as default") }
         }
     }
 }
@@ -413,7 +441,7 @@ private fun ShotCard(
     val scale by animateFloatAsState(if (selected) 0.92f else 1f, label = "select")
     val primary = MaterialTheme.colorScheme.primary
     Card(
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLargeIncreased,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         border = if (selected) BorderStroke(3.dp, primary) else null,
         modifier = Modifier
@@ -456,7 +484,7 @@ private fun ShotCard(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(10.dp)
-                        .clip(CircleShape)
+                        .clip(MaterialShapes.Cookie6Sided.toShape())
                         .background(MaterialTheme.colorScheme.tertiaryContainer)
                         .padding(6.dp)
                         .size(16.dp),
@@ -470,7 +498,7 @@ private fun ShotCard(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(10.dp)
-                        .clip(CircleShape)
+                        .clip(MaterialShapes.Cookie9Sided.toShape())
                         .background(MaterialTheme.colorScheme.primaryContainer)
                         .padding(8.dp)
                         .size(18.dp),
@@ -503,13 +531,13 @@ private fun EmptyState(isDefault: Boolean, onSetDefault: () -> Unit, onSetup: ()
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier
-                .clip(RoundedCornerShape(32.dp))
+                .clip(MaterialShapes.Cookie9Sided.toShape())
                 .background(MaterialTheme.colorScheme.primaryContainer)
-                .padding(24.dp)
+                .padding(36.dp)
                 .size(48.dp),
         )
         Spacer(Modifier.height(24.dp))
-        Text("No memories yet", style = MaterialTheme.typography.titleLarge)
+        Text("No memories yet", style = MaterialTheme.typography.headlineMediumEmphasized)
         Spacer(Modifier.height(8.dp))
         Text(
             "Hold the power button on any screen, add a voice note if you like, then tap Save.",
@@ -519,9 +547,9 @@ private fun EmptyState(isDefault: Boolean, onSetDefault: () -> Unit, onSetup: ()
         )
         Spacer(Modifier.height(24.dp))
         if (isDefault) {
-            FilledTonalButton(onClick = onSetup) { Text("Open setup") }
+            FilledTonalButton(onClick = onSetup, shapes = ButtonDefaults.shapes()) { Text("Open settings") }
         } else {
-            Button(onClick = onSetDefault) { Text("Set as default assistant") }
+            Button(onClick = onSetDefault, shapes = ButtonDefaults.shapes()) { Text("Set as default assistant") }
         }
     }
 }
