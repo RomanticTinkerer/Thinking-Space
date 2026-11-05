@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import com.openthinking.blankassistant.storage.MemoryMeta
 import com.openthinking.blankassistant.ui.DesignConfig
 import com.openthinking.blankassistant.ui.DesignSettings
+import com.openthinking.blankassistant.ui.LocalDesign
 import com.openthinking.blankassistant.ui.OtsTheme
 import com.openthinking.blankassistant.ui.appPrefs
 
@@ -273,6 +274,7 @@ private fun ThemeModeRow(mode: DesignConfig.ThemeMode, onChange: (DesignConfig.T
 /** A titled group of rows. Outer corners are big, the corners between rows are small, so they read as one list. */
 @Composable
 private fun Section(title: String, vararg rows: @Composable () -> Unit) {
+    val design = LocalDesign.current
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
             title,
@@ -281,8 +283,8 @@ private fun Section(title: String, vararg rows: @Composable () -> Unit) {
             modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
         )
         rows.forEachIndexed { i, row ->
-            val top = if (i == 0) DesignConfig.heroCorner else DesignConfig.joinCorner
-            val bottom = if (i == rows.lastIndex) DesignConfig.heroCorner else DesignConfig.joinCorner
+            val top = if (i == 0) design.heroCorner else design.joinCorner
+            val bottom = if (i == rows.lastIndex) design.heroCorner else design.joinCorner
             Surface(
                 shape = RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,

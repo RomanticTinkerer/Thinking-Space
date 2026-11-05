@@ -13,6 +13,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.expressiveLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,8 +30,8 @@ import com.dot.gallery.R
 
 fun appPrefs(context: Context): SharedPreferences = context.applicationContext.getSharedPreferences("app", Context.MODE_PRIVATE)
 
-/** One font file (Roboto Flex is variable); each text style picks its own axes from [DesignConfig.Type]. */
-private fun family(f: DesignConfig.Face, weightBoost: Int = 0): FontFamily {
+/** One font file (Roboto Flex is variable); each text style picks its own axes from the design language. */
+private fun family(f: Face, weightBoost: Int = 0): FontFamily {
     val w = (f.weight + weightBoost).coerceIn(100, 1000)
     return FontFamily(
         Font(
@@ -45,14 +46,13 @@ private fun family(f: DesignConfig.Face, weightBoost: Int = 0): FontFamily {
     )
 }
 
-private fun TextStyle.face(f: DesignConfig.Face, boost: Int = 0) =
+private fun TextStyle.face(f: Face, boost: Int = 0) =
     copy(fontFamily = family(f, boost), fontWeight = FontWeight((f.weight + boost).coerceIn(100, 1000)))
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private fun robotoFlexTypography(): Typography {
+private fun robotoFlexTypography(f: TypeScale): Typography {
     val t = Typography()
-    val f = DesignConfig.Type
-    val b = DesignConfig.Type.emphasisBoost
+    val b = f.emphasisBoost
     return Typography(
         displayLarge = t.displayLarge.face(f.displayLarge), displayMedium = t.displayMedium.face(f.displayMedium),
         displaySmall = t.displaySmall.face(f.displaySmall),
@@ -83,7 +83,7 @@ private fun robotoFlexTypography(): Typography {
 }
 
 /**
- * Material 3 Expressive with the values from [DesignConfig]. Colours follow the wallpaper (Material You,
+ * The active [DesignLanguage] (Material 3 Expressive by default) applied to Material 3. Colours follow the wallpaper (Material You,
  * Android 12+) unless switched off; light, dark or system comes from Settings, and dark can go pure black.
  * [forceDark] overrides the mode (the editor uses it). Lives in the editor module so the app shares it.
  */
@@ -99,6 +99,7 @@ fun OtsTheme(forceDark: Boolean? = null, content: @Composable () -> Unit) {
         prefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
+    val lang = settings.language
     val dark = forceDark ?: when (settings.mode) {
         DesignConfig.ThemeMode.System -> isSystemInDarkTheme()
         DesignConfig.ThemeMode.Light -> false
@@ -118,9 +119,10 @@ fun OtsTheme(forceDark: Boolean? = null, content: @Composable () -> Unit) {
     } else base
     MaterialExpressiveTheme(
         colorScheme = colors,
-        motionScheme = MotionScheme.expressive(),
-        shapes = DesignConfig.shapes,
-        typography = remember { robotoFlexTypography() },
-        content = content,
-    )
+        motionScheme = if (lang.expressiveMotion) MotionScheme.expressive() else MotionScheme.standard(),
+        shapes = lang.shapes,
+        typography = remember(lang) { robotoFlexTypography(lang.type) },
+    ) {
+        CompositionLocalProvider(LocalDesign provides lang, content = content)
+    }
 }
