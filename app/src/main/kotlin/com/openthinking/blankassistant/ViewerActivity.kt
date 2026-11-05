@@ -2,6 +2,7 @@ package com.openthinking.blankassistant
 
 import android.Manifest
 import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.ImageDecoder
@@ -13,6 +14,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -20,11 +22,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Alarm
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Pause
@@ -32,15 +40,19 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -48,6 +60,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,9 +72,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.openthinking.blankassistant.audio.NotePlayer
+import com.openthinking.blankassistant.ocr.TextReader
 import com.openthinking.blankassistant.reminder.Reminders
 import com.openthinking.blankassistant.storage.CaptureStore
 import com.openthinking.blankassistant.storage.MemoryMeta
@@ -79,6 +94,7 @@ import kotlin.math.max
 class ViewerActivity : ComponentActivity() {
 
     private val io = Executors.newSingleThreadExecutor()
+    private val ocrIo = Executors.newSingleThreadExecutor() // OCR takes seconds; keep it off [io]
     private lateinit var uri: Uri
     private lateinit var player: NotePlayer
     private lateinit var meta: MemoryMeta
@@ -88,6 +104,8 @@ class ViewerActivity : ComponentActivity() {
     private var caption by mutableStateOf("")
     private var pinned by mutableStateOf(false)
     private var remindAt by mutableLongStateOf(0L)
+    private var ocrText by mutableStateOf<String?>(null) // null = not scanned yet
+    private var ocrBusy by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,6 +122,9 @@ class ViewerActivity : ComponentActivity() {
                     caption = caption,
                     pinned = pinned,
                     remindAt = remindAt,
+                    ocrText = ocrText,
+                    ocrBusy = ocrBusy,
+                    onReadText = ::readText,
                     onBack = ::finish,
                     onCaption = {
                         caption = it
@@ -148,6 +169,7 @@ class ViewerActivity : ComponentActivity() {
                 caption = meta.caption(name)
                 pinned = meta.pinned(name)
                 remindAt = meta.reminderAt(name).takeIf { it > System.currentTimeMillis() } ?: 0L
+                ocrText = meta.ocr(name)
                 if (found != player.loaded) player.load(found)
             }
         }
@@ -161,6 +183,7 @@ class ViewerActivity : ComponentActivity() {
     override fun onDestroy() {
         if (::player.isInitialized) player.release()
         io.shutdownNow()
+        ocrIo.shutdownNow()
         super.onDestroy()
     }
 
@@ -173,6 +196,26 @@ class ViewerActivity : ComponentActivity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         startActivity(Intent.createChooser(send, null))
+    }
+
+    /**
+     * Runs OCR on the full-size image. Skipped if the text is already known, unless [force]
+     * (the editor changes the image in place, so the saved text can go stale; "Read again" fixes that).
+     */
+    private fun readText(force: Boolean) {
+        if (ocrBusy || base.isEmpty() || (!force && ocrText != null)) return
+        ocrBusy = true
+        val name = base
+        ocrIo.execute {
+            val text = TextReader.decode(this, uri)?.let { bitmap ->
+                TextReader(this).use { it.read(bitmap) }.also { bitmap.recycle() }
+            }
+            if (text != null) meta.setOcr(name, text)
+            runOnUiThread {
+                ocrBusy = false
+                if (text != null) ocrText = text
+            }
+        }
     }
 
     /** [at] = epoch millis, or 0 to clear. */
@@ -214,6 +257,9 @@ private fun ViewerScreen(
     caption: String,
     pinned: Boolean,
     remindAt: Long,
+    ocrText: String?,
+    ocrBusy: Boolean,
+    onReadText: (force: Boolean) -> Unit,
     onBack: () -> Unit,
     onCaption: (String) -> Unit,
     onPin: () -> Unit,
@@ -223,6 +269,7 @@ private fun ViewerScreen(
     onDelete: () -> Unit,
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
+    var showText by remember { mutableStateOf(false) }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
@@ -287,10 +334,22 @@ private fun ViewerScreen(
                 maxLines = 3,
                 shape = RoundedCornerShape(24.dp),
             )
-            ReminderChip(remindAt, onRemind)
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ReminderChip(remindAt, onRemind)
+                AssistChip(
+                    onClick = { showText = true; onReadText(false) },
+                    leadingIcon = { Icon(Icons.Rounded.TextFields, contentDescription = null) },
+                    label = { Text("Text in image") },
+                )
+            }
             if (hasNote) NoteCard(player)
         }
     }
+
+    if (showText) TextSheet(ocrText, ocrBusy, onReadAgain = { onReadText(true) }, onDismiss = { showText = false })
 
     if (confirmDelete) {
         AlertDialog(
@@ -302,6 +361,51 @@ private fun ViewerScreen(
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TextSheet(text: String?, busy: Boolean, onReadAgain: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("Text in this screenshot", style = MaterialTheme.typography.titleLarge)
+            when {
+                busy -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
+                    Text("Reading\u2026")
+                }
+                text == null -> Text("Couldn\u2019t read this image.")
+                text.isBlank() -> Text("No text found.")
+                else -> SelectionContainer {
+                    Text(
+                        text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState()),
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!text.isNullOrBlank()) {
+                    FilledTonalButton(onClick = {
+                        context.getSystemService(ClipboardManager::class.java)
+                            .setPrimaryClip(ClipData.newPlainText("Screenshot text", text))
+                    }) {
+                        Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Copy", modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+                TextButton(onClick = onReadAgain, enabled = !busy) { Text("Read again") }
+            }
+        }
     }
 }
 
