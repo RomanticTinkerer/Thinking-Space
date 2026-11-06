@@ -45,6 +45,7 @@
         <!-- Voice memo with no screenshot: launcher shortcut and Quick Settings tile open this. -->
         <activity
             android:name=".MemoActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
             android:exported="true"
             android:excludeFromRecents="true"
             android:label="@string/shortcut_memo_short" />
