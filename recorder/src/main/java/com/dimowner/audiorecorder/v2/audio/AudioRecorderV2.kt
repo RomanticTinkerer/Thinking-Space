@@ -4,7 +4,7 @@ import android.content.Context
 import android.media.MediaRecorder
 import kotlinx.coroutines.CoroutineScope
 
-// LOCAL MODIFICATION (OpenThinking Space): upstream is annotated @Singleton / @Inject and takes an
+// LOCAL MODIFICATION (Thinking Space): upstream is annotated @Singleton / @Inject and takes an
 // @ApplicationContext (Hilt). Those annotations were removed so the class can be constructed
 // directly; the body is otherwise identical to upstream
 // (Dimowner/AudioRecorder @ 28ef142, app/.../v2/audio/AudioRecorderV2.kt).

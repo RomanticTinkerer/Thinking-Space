@@ -4,7 +4,7 @@ import android.app.Application
 import android.content.pm.ApplicationInfo
 import timber.log.Timber
 
-class OpenThinkingSpaceApp : Application() {
+class ThinkingSpaceApp : Application() {
     override fun onCreate() {
         super.onCreate()
         // The vendored recorder engine logs through Timber; only show it in debuggable builds.

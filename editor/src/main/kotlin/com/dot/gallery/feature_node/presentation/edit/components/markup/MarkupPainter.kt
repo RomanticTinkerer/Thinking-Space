@@ -215,7 +215,7 @@ fun MarkupPainter(
     }
 
     Image(
-        // OpenThinking Space patch: plain Image instead of an image-loader composable; bitmap is a decoded Bitmap.
+        // Thinking Space patch: plain Image instead of an image-loader composable; bitmap is a decoded Bitmap.
         bitmap = remember(bitmap) { (bitmap as Bitmap).asImageBitmap() },
         contentDescription = null,
         modifier = Modifier

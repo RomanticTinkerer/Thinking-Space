@@ -23,7 +23,7 @@
     <string name="type_erase">Eraser</string>
     <string name="type_pan">Pan</string>
 
-    <!-- OpenThinking Space additions -->
+    <!-- Thinking Space additions -->
     <string name="editor_markup">Markup</string>
     <string name="editor_redo">Redo</string>
     <string name="editor_close">Close</string>

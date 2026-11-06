@@ -12,7 +12,7 @@ Make it your default assistant, then hold the power button (or whatever gesture 
 - **Record**: attach a voice note. Stop, or reset to try again, with a live level meter.
 - **Save**: store it. Nothing is written until you save, and the trash icon discards the capture.
 
-Everything lands in the shared `Pictures/OpenThinking Space Screenshots` album, named `Screenshot1`, `Screenshot2` and so on. Voice notes go to `Recordings/OTSVoiceNotes` as `Screenshot1_Note`, so any other gallery or recorder app can see them too.
+Everything lands in the shared `Pictures/OpenThinking Space Screenshots` album (the folder keeps its old name so earlier screenshots stay visible), named `Screenshot1`, `Screenshot2` and so on. Voice notes go to `Recordings/OTSVoiceNotes` as `Screenshot1_Note`, so any other gallery or recorder app can see them too.
 
 ## What carries over from Essential Space
 

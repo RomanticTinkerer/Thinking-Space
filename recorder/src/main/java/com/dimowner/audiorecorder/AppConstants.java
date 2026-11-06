@@ -17,7 +17,7 @@
 package com.dimowner.audiorecorder;
 
 /**
- * LOCAL MODIFICATION (OpenThinking Space): upstream's AppConstants holds several hundred app-wide
+ * LOCAL MODIFICATION (Thinking Space): upstream's AppConstants holds several hundred app-wide
  * constants. Only the single one the vendored recorder engine references is kept here, with its
  * upstream value (Dimowner/AudioRecorder @ 28ef142).
  */
