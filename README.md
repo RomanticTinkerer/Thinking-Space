@@ -23,8 +23,9 @@ Everything lands in the shared `Pictures/OpenThinking Space Screenshots` album (
 | Essential Key capture | Default-assistant gesture (power button hold) |
 | Screenshot with a voice note | Yes, pinned to the screenshot |
 | Notes on a memory | Text note on every screenshot, searchable |
-| Text in screenshots | Offline OCR (Tesseract, English). Search finds words inside screenshots, and "Text in image" lets you copy them |
+| Text in screenshots | Offline OCR (PaddleOCR on ONNX, English). Search finds words inside screenshots, and "Text in image" lets you copy them |
 | Collections | Pinned and Voice notes filters |
+| Add to calendar | Finds dates, times and places in the text and opens your calendar app with the event filled in. A schedule gives one event per time. Plain rules, no model |
 | Reminders | "Remind me" on any screenshot (notification) |
 | Share to Essential Space | "Share to Thinking Space" saves text, links, images and audio (chat voice messages too) |
 | Quick note, voice memo | "New note" and mic buttons on the home screen, plus launcher shortcuts and a Quick Settings tile (Voice memo) |

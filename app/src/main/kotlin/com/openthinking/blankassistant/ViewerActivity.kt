@@ -3,10 +3,12 @@
 package com.openthinking.blankassistant
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.widget.Toast
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
@@ -35,6 +37,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Alarm
+import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -82,6 +85,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.openthinking.blankassistant.audio.NotePlayer
+import com.openthinking.blankassistant.events.CalendarEvent
+import com.openthinking.blankassistant.events.EventParser
+import com.openthinking.blankassistant.events.toIntent
 import com.openthinking.blankassistant.ocr.TextReader
 import com.openthinking.blankassistant.reminder.Reminders
 import com.openthinking.blankassistant.storage.CaptureStore
@@ -329,7 +335,11 @@ private fun ViewerScreen(
                 maxLines = 3,
                 shape = MaterialTheme.shapes.extraLarge,
             )
-            ReminderChip(remindAt, onRemind)
+            val events = remember(ocrText) { ocrText?.let(EventParser::parse).orEmpty() }
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ReminderChip(remindAt, onRemind)
+                CalendarChip(events)
+            }
             if (hasNote) NoteCard(player)
             // Floating toolbar: the main actions, with Edit as the lifted primary one.
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -413,6 +423,48 @@ private fun TextSheet(text: String?, busy: Boolean, onReadAgain: () -> Unit, onD
                     }
                 }
                 TextButton(onClick = onReadAgain, enabled = !busy) { Text("Read again") }
+            }
+        }
+    }
+}
+
+/** Shown when the text in the screenshot holds an event. One event opens the calendar straight away, several ask which. */
+@Composable
+private fun CalendarChip(events: List<CalendarEvent>) {
+    if (events.isEmpty()) return
+    val context = LocalContext.current
+    var open by remember { mutableStateOf(false) }
+    fun add(e: CalendarEvent) {
+        try {
+            context.startActivity(e.toIntent())
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(context, "No calendar app found", Toast.LENGTH_SHORT).show()
+        }
+    }
+    Box {
+        AssistChip(
+            onClick = { if (events.size == 1) add(events[0]) else open = true },
+            leadingIcon = { Icon(Icons.Rounded.Event, contentDescription = null) },
+            label = { Text("Add to calendar") },
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            events.forEach { e ->
+                // All-day events are stored as UTC midnights, so they are shown in UTC too.
+                val flags = DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_ALL or
+                    if (e.allDay) DateUtils.FORMAT_UTC else DateUtils.FORMAT_SHOW_TIME
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(e.title)
+                            Text(
+                                DateUtils.formatDateTime(context, e.start, flags),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                    onClick = { open = false; add(e) },
+                )
             }
         }
     }
