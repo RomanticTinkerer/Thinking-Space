@@ -115,7 +115,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private const val REPO = "https://github.com/RomanticTinkerer/OpenThinking-Space"
+private const val REPO = "https://github.com/RomanticTinkerer/Thinking-Space"
 
 @Composable
 private fun SettingsScreen(
@@ -235,7 +235,7 @@ private fun SettingsScreen(
                 Section(
                     "About",
                     { SettingRow(Icons.Rounded.Info, "Version", version) },
-                    { SettingRow(Icons.Rounded.Code, "Source code", "github.com/RomanticTinkerer/OpenThinking-Space", onClick = { onOpen(REPO) }) },
+                    { SettingRow(Icons.Rounded.Code, "Source code", "github.com/RomanticTinkerer/Thinking-Space", onClick = { onOpen(REPO) }) },
                     {
                         SettingRow(
                             Icons.Rounded.Description, "Open source licences",
