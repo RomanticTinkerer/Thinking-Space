@@ -29,8 +29,6 @@
     <string name="msg_shared_saved">Saved %1$d to Thinking Space</string>
     <string name="msg_shared_failed">Couldn\u2019t save that</string>
     <string name="msg_note_saved">Note saved</string>
-    <string name="msg_transcribe_busy">Still writing out other voice notes. Try again in a moment.</string>
-    <string name="msg_transcribe_failed">Couldn\u2019t write that voice note out</string>
     <string name="msg_memo_saved">Voice memo saved</string>
     <string name="tile_memo">Voice memo</string>
     <string name="shortcut_memo_short">Voice memo</string>

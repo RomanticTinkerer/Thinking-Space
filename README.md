@@ -26,12 +26,11 @@ Everything lands in the shared `Pictures/OpenThinking Space Screenshots` album (
 | Text in screenshots | Offline OCR (Tesseract, English). Search finds words inside screenshots, and "Text in image" lets you copy them |
 | Collections | Pinned and Voice notes filters |
 | Reminders | "Remind me" on any screenshot (notification) |
-| Voice transcription | On-device Parakeet. Voice notes are written out as text, searchable, with Copy in the viewer |
 | Share to Essential Space | "Share to Thinking Space" saves text, links, images and audio (chat voice messages too) |
 | Quick note, voice memo | "New note" and mic buttons on the home screen, plus launcher shortcuts and a Quick Settings tile (Voice memo) |
 | Share, multi-select | Share, long-press to pin or delete several |
 
-Not here yet: AI summaries and task extraction, transcription in languages other than English, OCR in languages other than English, widgets and backup. They need a model, and the aim is to add them on-device or not at all.
+Not here yet: AI summaries and task extraction, voice transcription, OCR in languages other than English, widgets and backup. They need a model, and the aim is to add them on-device or not at all.
 
 ## Build
 
@@ -39,9 +38,7 @@ Not here yet: AI summaries and task extraction, transcription in languages other
 ./gradlew :app:installDebug
 ```
 
-The first build downloads the speech model (about 650 MB, NVIDIA Parakeet) and the sherpa-onnx library into `app/asr-model/` and `app/libs/`. Both are git-ignored, so the repo stays small, and the app itself never goes online. They are bundled in the APK, which is why it is large (about 840 MB debug). The model needs about 1 GB of RAM while it is writing voice notes out, and it is loaded only then.
-
-Needs JDK 21 and the Android SDK (compileSdk 37). After installing, open the app, accept the "set as default assistant" prompt and allow the microphone. In the assistant settings, also switch on "Use screenshot".
+After installing, open the app, accept the "set as default assistant" prompt and allow the microphone. In the assistant settings, also switch on "Use screenshot".
 
 The internal package is still `com.openthinking.blankassistant`. It was kept on purpose so existing installs keep their saved screenshots (scoped storage ties files to the package).
 

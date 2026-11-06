@@ -4,5 +4,3 @@ local.properties
 .idea/
 *.iml
 .kotlin/
-app/asr-model/
-app/libs/

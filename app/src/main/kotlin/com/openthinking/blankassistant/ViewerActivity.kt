@@ -82,7 +82,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.openthinking.blankassistant.audio.NotePlayer
-import com.openthinking.blankassistant.asr.Transcriber
 import com.openthinking.blankassistant.ocr.TextReader
 import com.openthinking.blankassistant.reminder.Reminders
 import com.openthinking.blankassistant.storage.CaptureStore
@@ -92,8 +91,6 @@ import kotlinx.coroutines.delay
 import timber.log.Timber
 import java.util.Calendar
 import java.util.concurrent.Executors
-import android.widget.Toast
-import androidx.compose.ui.text.style.TextOverflow
 import kotlin.math.max
 
 /**
@@ -115,9 +112,6 @@ class ViewerActivity : ComponentActivity() {
     private var remindAt by mutableLongStateOf(0L)
     private var ocrText by mutableStateOf<String?>(null) // null = not scanned yet
     private var ocrBusy by mutableStateOf(false)
-    private var transcript by mutableStateOf<String?>(null) // null = not written out yet
-    private var transcribing by mutableStateOf(false)
-    private val asrIo = Executors.newSingleThreadExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -136,9 +130,6 @@ class ViewerActivity : ComponentActivity() {
                     remindAt = remindAt,
                     ocrText = ocrText,
                     ocrBusy = ocrBusy,
-                    transcript = transcript,
-                    transcribing = transcribing,
-                    onTranscribe = ::transcribe,
                     onReadText = ::readText,
                     onBack = ::finish,
                     onCaption = {
@@ -185,7 +176,6 @@ class ViewerActivity : ComponentActivity() {
                 pinned = meta.pinned(name)
                 remindAt = meta.reminderAt(name).takeIf { it > System.currentTimeMillis() } ?: 0L
                 ocrText = meta.ocr(name)
-                transcript = meta.transcript(name)
                 if (found != player.loaded) player.load(found)
             }
         }
@@ -200,7 +190,6 @@ class ViewerActivity : ComponentActivity() {
         if (::player.isInitialized) player.release()
         io.shutdownNow()
         ocrIo.shutdownNow()
-        asrIo.shutdownNow()
         super.onDestroy()
     }
 
@@ -231,30 +220,6 @@ class ViewerActivity : ComponentActivity() {
             runOnUiThread {
                 ocrBusy = false
                 if (text != null) ocrText = text
-            }
-        }
-    }
-
-    /** Writes the voice note out as text now (the gallery does it in the background for new notes). */
-    private fun transcribe() {
-        val noteUri = note
-        if (transcribing || base.isEmpty() || noteUri == null) return
-        if (!Transcriber.running.compareAndSet(false, true)) {
-            Toast.makeText(this, R.string.msg_transcribe_busy, Toast.LENGTH_SHORT).show()
-            return
-        }
-        transcribing = true
-        val name = base
-        asrIo.execute {
-            val text = try {
-                Transcriber.open(this)?.use { it.transcribe(this, noteUri) }
-            } finally {
-                Transcriber.running.set(false)
-            }
-            if (text != null) meta.setTranscript(name, text)
-            runOnUiThread {
-                transcribing = false
-                if (text != null) transcript = text else Toast.makeText(this, R.string.msg_transcribe_failed, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -300,9 +265,6 @@ private fun ViewerScreen(
     remindAt: Long,
     ocrText: String?,
     ocrBusy: Boolean,
-    transcript: String?,
-    transcribing: Boolean,
-    onTranscribe: () -> Unit,
     onReadText: (force: Boolean) -> Unit,
     onBack: () -> Unit,
     onCaption: (String) -> Unit,
@@ -314,7 +276,6 @@ private fun ViewerScreen(
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
     var showText by remember { mutableStateOf(false) }
-    var showTranscript by remember { mutableStateOf(false) }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
@@ -370,7 +331,6 @@ private fun ViewerScreen(
             )
             ReminderChip(remindAt, onRemind)
             if (hasNote) NoteCard(player)
-            if (hasNote) TranscriptCard(transcript, transcribing) { showTranscript = true; if (transcript == null) onTranscribe() }
             // Floating toolbar: the main actions, with Edit as the lifted primary one.
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 HorizontalFloatingToolbar(
@@ -399,20 +359,6 @@ private fun ViewerScreen(
     }
 
     if (showText) TextSheet(ocrText, ocrBusy, onReadAgain = { onReadText(true) }, onDismiss = { showText = false })
-    if (showTranscript) {
-        TextSheet(
-            text = transcript,
-            busy = transcribing,
-            title = "What the voice note says",
-            busyLabel = "Writing it out\u2026",
-            failedLabel = "Not written out yet.",
-            emptyLabel = "No speech found.",
-            copyLabel = "Voice note text",
-            retryLabel = "Write out again",
-            onReadAgain = onTranscribe,
-            onDismiss = { showTranscript = false },
-        )
-    }
 
     if (confirmDelete) {
         AlertDialog(
@@ -429,18 +375,7 @@ private fun ViewerScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TextSheet(
-    text: String?,
-    busy: Boolean,
-    onReadAgain: () -> Unit,
-    onDismiss: () -> Unit,
-    title: String = "Text in this screenshot",
-    busyLabel: String = "Reading\u2026",
-    failedLabel: String = "Couldn\u2019t read this image.",
-    emptyLabel: String = "No text found.",
-    copyLabel: String = "Screenshot text",
-    retryLabel: String = "Read again",
-) {
+private fun TextSheet(text: String?, busy: Boolean, onReadAgain: () -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
@@ -449,14 +384,14 @@ private fun TextSheet(
                 .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(title, style = MaterialTheme.typography.titleLargeEmphasized)
+            Text("Text in this screenshot", style = MaterialTheme.typography.titleLargeEmphasized)
             when {
                 busy -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     LoadingIndicator(Modifier.size(40.dp))
-                    Text(busyLabel)
+                    Text("Reading\u2026")
                 }
-                text == null -> Text(failedLabel)
-                text.isBlank() -> Text(emptyLabel)
+                text == null -> Text("Couldn\u2019t read this image.")
+                text.isBlank() -> Text("No text found.")
                 else -> SelectionContainer {
                     Text(
                         text,
@@ -471,13 +406,13 @@ private fun TextSheet(
                 if (!text.isNullOrBlank()) {
                     FilledTonalButton(onClick = {
                         context.getSystemService(ClipboardManager::class.java)
-                            .setPrimaryClip(ClipData.newPlainText(copyLabel, text))
+                            .setPrimaryClip(ClipData.newPlainText("Screenshot text", text))
                     }) {
                         Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text("Copy", modifier = Modifier.padding(start = 8.dp))
                     }
                 }
-                TextButton(onClick = onReadAgain, enabled = !busy) { Text(retryLabel) }
+                TextButton(onClick = onReadAgain, enabled = !busy) { Text("Read again") }
             }
         }
     }
@@ -570,38 +505,6 @@ private fun NoteCard(player: NotePlayer) {
                     Text(format(player.duration), style = MaterialTheme.typography.labelMedium)
                 }
             }
-        }
-    }
-}
-
-/** A short preview of what the voice note says; tap for the full text, copy and retry. */
-@Composable
-private fun TranscriptCard(transcript: String?, busy: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLargeIncreased,
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            if (busy) LoadingIndicator(Modifier.size(32.dp))
-            else Icon(Icons.Rounded.TextFields, contentDescription = null)
-            Text(
-                when {
-                    busy -> "Writing it out\u2026"
-                    transcript == null -> "Tap to write this voice note out as text"
-                    transcript.isBlank() -> "No speech found in the voice note"
-                    else -> transcript
-                },
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }

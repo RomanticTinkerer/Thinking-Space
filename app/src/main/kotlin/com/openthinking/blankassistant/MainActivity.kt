@@ -62,7 +62,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.openthinking.blankassistant.asr.Transcriber
 import com.openthinking.blankassistant.storage.MemoryMeta
 import com.openthinking.blankassistant.ui.DesignConfig
 import com.openthinking.blankassistant.ui.DesignSettings
@@ -135,7 +134,6 @@ private fun SettingsScreen(
     var mode by remember { mutableStateOf(DesignSettings.read(prefs).mode) }
     var pureBlack by remember { mutableStateOf(prefs.getBoolean(DesignConfig.KEY_PURE_BLACK, DesignConfig.DEFAULT_PURE_BLACK)) }
     var rescanned by remember { mutableStateOf(false) }
-    var transcribe by remember { mutableStateOf(prefs.getBoolean(Transcriber.PREF_KEY, true)) }
     val canDynamic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -235,26 +233,13 @@ private fun SettingsScreen(
             }
             item {
                 Section(
-                    "Voice notes",
-                    {
-                        SettingRow(
-                            Icons.Rounded.Mic, "Write voice notes out as text",
-                            "On your phone only (NVIDIA Parakeet, English). Makes voice notes searchable. Uses about 1 GB of memory while it works.",
-                            onClick = { transcribe = !transcribe; prefs.edit().putBoolean(Transcriber.PREF_KEY, transcribe).apply() },
-                            trailing = { Switch(checked = transcribe, onCheckedChange = null) },
-                        )
-                    },
-                )
-            }
-            item {
-                Section(
                     "About",
                     { SettingRow(Icons.Rounded.Info, "Version", version) },
                     { SettingRow(Icons.Rounded.Code, "Source code", "github.com/RomanticTinkerer/Thinking-Space", onClick = { onOpen(REPO) }) },
                     {
                         SettingRow(
                             Icons.Rounded.Description, "Open source licences",
-                            "Tesseract, ReFra, Dimowner recorder, sherpa-onnx, Parakeet, ONNX models and Google Sans Flex.",
+                            "Tesseract, ReFra, Dimowner recorder, ONNX models and Google Sans Flex.",
                             onClick = { onOpen("$REPO/blob/main/THIRD_PARTY_NOTICES.md") },
                         )
                     },
