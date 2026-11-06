@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import android.util.LruCache
 import android.util.Size
 import androidx.activity.ComponentActivity
@@ -44,6 +45,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Mic
@@ -60,7 +62,10 @@ import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -96,6 +101,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.openthinking.blankassistant.asr.Transcriber
 import com.openthinking.blankassistant.ocr.TextReader
 import com.openthinking.blankassistant.reminder.Reminders
 import com.openthinking.blankassistant.storage.CaptureStore
@@ -118,13 +124,17 @@ class GalleryActivity : ComponentActivity() {
     private val thumbs = LruCache<Uri, ImageBitmap>(80)
     private val ocrIo = Executors.newSingleThreadExecutor()
     private val scanning = AtomicBoolean(false)
+    private val asrIo = Executors.newSingleThreadExecutor() // speech to text is slow and heavy; its own lane
     private var shots by mutableStateOf<List<Shot>?>(null)
     private var isDefault by mutableStateOf(true)
     private var unscanned by mutableIntStateOf(0)
+    private var untranscribed by mutableIntStateOf(0)
+    private var noteOpen by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        noteOpen = intent.getBooleanExtra(EXTRA_NEW_NOTE, false) // the "New note" launcher shortcut
         setContent {
             OtsTheme {
                 val askRole = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -133,6 +143,19 @@ class GalleryActivity : ComponentActivity() {
                 GalleryScreen(
                     shots = shots,
                     unscanned = unscanned,
+                    untranscribed = untranscribed,
+                    noteOpen = noteOpen,
+                    onNoteOpen = { noteOpen = it },
+                    onNote = { text ->
+                        io.execute {
+                            val saved = CaptureStore.saveText(this, text)
+                            runOnUiThread {
+                                Toast.makeText(this, if (saved != null) R.string.msg_note_saved else R.string.msg_save_failed, Toast.LENGTH_SHORT).show()
+                            }
+                            reload()
+                        }
+                    },
+                    onMemo = { startActivity(Intent(this, MemoActivity::class.java)) },
                     isDefault = isDefault,
                     loadThumb = ::loadThumb,
                     onOpen = { startActivity(Intent(this, ViewerActivity::class.java).setData(it.uri)) },
@@ -182,11 +205,13 @@ class GalleryActivity : ComponentActivity() {
                     caption = meta.caption(it.baseName),
                     pinned = meta.pinned(it.baseName),
                     ocrText = meta.ocr(it.baseName).orEmpty(),
+                    transcript = meta.transcript(it.baseName).orEmpty(),
                 )
             }
             .sortedByDescending { it.pinned } // stable: newest first inside each group
         runOnUiThread { if (!isDestroyed) shots = list }
         scanText(list)
+        transcribeNotes(list)
     }
 
     /**
@@ -223,9 +248,43 @@ class GalleryActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Turns every voice note that has no transcript yet into text, newest first, one at a time, on the phone.
+     * The speech model is big, so it is loaded only while there is something to do. Skipped if a run is
+     * already going; the next reload picks up what is left.
+     */
+    private fun transcribeNotes(list: List<Shot>) {
+        if (!Transcriber.enabled(this)) return
+        val meta = MemoryMeta(this)
+        val todo = list.filter { it.noteUri != null && meta.transcript(it.baseName) == null }
+        if (todo.isEmpty() || !Transcriber.running.compareAndSet(false, true)) return
+        runOnUiThread { untranscribed = todo.size }
+        asrIo.execute {
+            try {
+                Transcriber.open(this)?.use { transcriber ->
+                    todo.forEachIndexed { i, shot ->
+                        if (isDestroyed) return@use
+                        // ponytail: audio that cannot be decoded is stored as silent so it is not retried on every
+                        // launch (and the model reloaded each time); the viewer has a Retry button.
+                        val text = transcriber.transcribe(this, shot.noteUri!!).orEmpty()
+                        meta.setTranscript(shot.baseName, text)
+                        runOnUiThread {
+                            shots = shots?.map { if (it.baseName == shot.baseName) it.copy(transcript = text) else it }
+                            untranscribed = todo.size - i - 1
+                        }
+                    }
+                }
+            } finally {
+                Transcriber.running.set(false)
+                runOnUiThread { untranscribed = 0 }
+            }
+        }
+    }
+
     override fun onDestroy() {
         io.shutdownNow()
         ocrIo.shutdownNow()
+        asrIo.shutdownNow()
         super.onDestroy()
     }
 
@@ -235,6 +294,8 @@ class GalleryActivity : ComponentActivity() {
     }
 }
 
+private const val EXTRA_NEW_NOTE = "new_note"
+
 private enum class Filter(val label: String, val icon: ImageVector) {
     All("All", Icons.Rounded.PhotoLibrary), Pinned("Pinned", Icons.Rounded.Star), Voice("Voice notes", Icons.Rounded.Mic)
 }
@@ -243,6 +304,11 @@ private enum class Filter(val label: String, val icon: ImageVector) {
 private fun GalleryScreen(
     shots: List<Shot>?,
     unscanned: Int,
+    untranscribed: Int,
+    noteOpen: Boolean,
+    onNoteOpen: (Boolean) -> Unit,
+    onNote: (String) -> Unit,
+    onMemo: () -> Unit,
     isDefault: Boolean,
     loadThumb: suspend (Uri) -> ImageBitmap?,
     onOpen: (Shot) -> Unit,
@@ -264,7 +330,8 @@ private fun GalleryScreen(
         (filter == Filter.All || (filter == Filter.Pinned && it.pinned) || (filter == Filter.Voice && it.noteUri != null)) &&
             (query.isBlank() ||
                 it.caption.contains(query.trim(), ignoreCase = true) ||
-                it.ocrText.contains(query.trim(), ignoreCase = true))
+                it.ocrText.contains(query.trim(), ignoreCase = true) ||
+                it.transcript.contains(query.trim(), ignoreCase = true))
     }
 
     // A soft wash of the theme's colour at the top that settles into the plain surface lower down.
@@ -273,6 +340,20 @@ private fun GalleryScreen(
     Scaffold(
         modifier = Modifier.background(wash),
         containerColor = Color.Transparent,
+        floatingActionButton = {
+            if (!selecting) {
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SmallFloatingActionButton(onClick = onMemo) {
+                        Icon(Icons.Rounded.Mic, contentDescription = "Record a voice memo")
+                    }
+                    ExtendedFloatingActionButton(onClick = { onNoteOpen(true) }) {
+                        Icon(Icons.Rounded.Edit, contentDescription = null)
+                        Spacer(Modifier.width(12.dp))
+                        Text("New note")
+                    }
+                }
+            }
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -324,7 +405,7 @@ private fun GalleryScreen(
                     start = 20.dp,
                     end = 20.dp,
                     top = 4.dp,
-                    bottom = padding.calculateBottomPadding() + 32.dp,
+                    bottom = padding.calculateBottomPadding() + 120.dp,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalItemSpacing = 14.dp,
@@ -343,7 +424,7 @@ private fun GalleryScreen(
                             value = query,
                             onValueChange = { query = it },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("Search notes and text in screenshots") },
+                            placeholder = { Text("Search notes, text and voice notes") },
                             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                             trailingIcon = {
                                 if (query.isNotEmpty()) {
@@ -380,6 +461,20 @@ private fun GalleryScreen(
                                     Spacer(Modifier.width(8.dp))
                                     Text(option.label)
                                 }
+                            }
+                        }
+                        if (untranscribed > 0) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                LoadingIndicator(Modifier.size(36.dp))
+                                Text(
+                                    "Writing out $untranscribed voice note${if (untranscribed == 1) "" else "s"}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                         if (unscanned > 0) {
@@ -424,6 +519,28 @@ private fun GalleryScreen(
                 }
             }
         }
+    }
+
+    if (noteOpen) {
+        var text by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { onNoteOpen(false) },
+            title = { Text("New note") },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Write or paste anything") },
+                    minLines = 4,
+                    maxLines = 10,
+                )
+            },
+            confirmButton = {
+                TextButton(enabled = text.isNotBlank(), onClick = { onNote(text); onNoteOpen(false) }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { onNoteOpen(false) }) { Text("Cancel") } },
+        )
     }
 
     if (confirmDelete) {

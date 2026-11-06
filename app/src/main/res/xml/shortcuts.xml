@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="memo"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_memo"
+        android:shortcutShortLabel="@string/shortcut_memo_short"
+        android:shortcutLongLabel="@string/shortcut_memo_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.openthinking.blankassistant"
+            android:targetClass="com.openthinking.blankassistant.MemoActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="note"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_note"
+        android:shortcutShortLabel="@string/shortcut_note_short"
+        android:shortcutLongLabel="@string/shortcut_note_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.openthinking.blankassistant"
+            android:targetClass="com.openthinking.blankassistant.GalleryActivity">
+            <extra
+                android:name="new_note"
+                android:value="true" />
+        </intent>
+    </shortcut>
+</shortcuts>

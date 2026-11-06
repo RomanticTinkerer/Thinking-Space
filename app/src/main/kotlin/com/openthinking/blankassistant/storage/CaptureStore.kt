@@ -28,6 +28,7 @@ object CaptureStore {
     const val NOTES_DIR = "OTSVoiceNotes"
     private const val NOTE_SUFFIX = "_Note"
     private const val MAX_NAME_TRIES = 500
+    private const val MAX_SHARED_PX = 4096
 
     private val SHOT_NAME = Regex("""^Screenshot(\d+)\.png$""")
 
@@ -43,6 +44,8 @@ object CaptureStore {
         val pinned: Boolean = false,
         /** Text read from the image by OCR. Empty until the screenshot has been scanned. */
         val ocrText: String = "",
+        /** What the voice note says (empty until it has been transcribed). */
+        val transcript: String = "",
     )
 
     private val imagesCollection: Uri
@@ -90,6 +93,66 @@ object CaptureStore {
             n++
         }
         return null
+    }
+
+    /** Saves a typed or shared note or link as a text card; the raw text becomes its caption. */
+    fun saveText(context: Context, text: String): Uri? {
+        val clean = text.trim()
+        if (clean.isEmpty()) return null
+        val (uri, base) = saveScreenshot(context, CardRenderer.text(context, clean)) ?: return null
+        MemoryMeta(context).apply {
+            setCaption(base, clean)
+            setOcr(base, clean) // the text is already known, so the gallery need not read the card
+        }
+        return uri
+    }
+
+    /** Saves a voice memo as a card with the recording pinned to it. The caller still owns (and should delete) [source]. */
+    fun saveMemo(context: Context, source: File, durationMs: Long): Uri? {
+        val (uri, base) = saveScreenshot(context, CardRenderer.memo(context, durationMs)) ?: return null
+        MemoryMeta(context).setOcr(base, "")
+        if (saveVoiceNote(context, source, base) == null) {
+            context.contentResolver.delete(uri, null, null)
+            MemoryMeta(context).forget(base)
+            return null
+        }
+        return uri
+    }
+
+    /**
+     * Saves audio shared from another app (a chat voice message, say) as a voice memo.
+     * ponytail: stored under an .m4a name whatever the format; players and the decoder sniff the content.
+     */
+    fun saveAudio(context: Context, source: Uri): Uri? {
+        val temp = File.createTempFile("shared-", ".m4a", context.cacheDir)
+        try {
+            context.contentResolver.openInputStream(source)?.use { input -> temp.outputStream().use { input.copyTo(it) } }
+                ?: return null
+            val retriever = android.media.MediaMetadataRetriever()
+            val duration = try {
+                retriever.setDataSource(temp.path)
+                retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } catch (e: RuntimeException) {
+                return null // not audio we can read
+            } finally {
+                retriever.release()
+            }
+            return saveMemo(context, temp, duration)
+        } finally {
+            temp.delete()
+        }
+    }
+
+    /** Copies an image shared from another app into the album. Large photos are scaled down on decode. */
+    fun saveImage(context: Context, source: Uri): Uri? {
+        val bitmap = runCatching {
+            android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(context.contentResolver, source)) { decoder, info, _ ->
+                decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                val longest = maxOf(info.size.width, info.size.height)
+                if (longest > MAX_SHARED_PX) decoder.setTargetSampleSize((longest + MAX_SHARED_PX - 1) / MAX_SHARED_PX)
+            }
+        }.onFailure { Timber.e(it, "Could not read shared image $source") }.getOrNull() ?: return null
+        return saveScreenshot(context, bitmap)?.first.also { bitmap.recycle() }
     }
 
     /** Copies [source] (an .m4a) in as `<baseName>_Note.m4a`. Returns its Uri, or null on failure. */
