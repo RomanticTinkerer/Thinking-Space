@@ -39,7 +39,7 @@ import java.util.Locale
  * Full-screen assistant overlay.
  *
  * When the screenshot arrives it is shown full-bleed (with a quick shutter flash), then morphs down
- * into a rounded thumbnail over a tinted backdrop. Below it sits a connected group of three tiles:
+ * into a rounded thumbnail over a pure black backdrop. Below it sit three separate tiles:
  * Edit (filled), Record and Save (tonal). Colours follow the wallpaper on Android 12+ (see [Palette]).
  *
  * It is a plain [View] tree with no AndroidX/Material dependency, because it lives in the
@@ -65,7 +65,6 @@ class CaptureOverlayView(
     private fun dp(value: Float): Float = value * density
     private val c = Palette(context)
     private val outerCorner = dp(DesignLanguages.default.heroCorner.value)
-    private val innerCorner = dp(DesignLanguages.default.joinCorner.value + 2f)
 
     private val screenBounds = context.getSystemService(WindowManager::class.java)
         .maximumWindowMetrics.bounds
@@ -77,7 +76,7 @@ class CaptureOverlayView(
     // --- Views -------------------------------------------------------------------------------
 
     private val scrim = View(context).apply {
-        background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(c.backdropTop, c.backdropBottom))
+        setBackgroundColor(Color.BLACK) // pure black: OLED pixels stay off
         alpha = 0f
         setOnClickListener { listener.onDismiss() }
     }
@@ -119,26 +118,26 @@ class CaptureOverlayView(
         }
         setPadding(dp(16f).toInt(), dp(7f).toInt(), dp(16f).toInt(), dp(7f).toInt())
     }
-    private val editButton = ActionButton(R.drawable.ic_edit, R.string.action_edit, c.primary, Slot.FIRST).apply {
+    private val editButton = ActionButton(R.drawable.ic_edit, R.string.action_edit, c.primary).apply {
         setOnClickListener { listener.onEdit() }
     }
-    private val recordButton = ActionButton(R.drawable.ic_mic, R.string.action_record, c.secondary, Slot.MIDDLE).apply {
+    private val recordButton = ActionButton(R.drawable.ic_mic, R.string.action_record, c.secondary).apply {
         setOnClickListener { listener.onRecordToggle() }
     }
-    private val saveButton = ActionButton(R.drawable.ic_save, R.string.action_save, c.tertiary, Slot.LAST).apply {
+    private val saveButton = ActionButton(R.drawable.ic_save, R.string.action_save, c.tertiary).apply {
         setOnClickListener { listener.onSave() }
     }
 
     // While recording the group shows: [Stop] [Reset] [live level bars] instead of the three actions.
-    private val stopButton = ActionButton(R.drawable.ic_stop, R.string.action_stop, c.error, Slot.FIRST).apply {
+    private val stopButton = ActionButton(R.drawable.ic_stop, R.string.action_stop, c.error).apply {
         setOnClickListener { listener.onRecordToggle() }
     }
-    private val resetButton = ActionButton(R.drawable.ic_refresh, R.string.action_reset, c.secondary, Slot.MIDDLE).apply {
+    private val resetButton = ActionButton(R.drawable.ic_refresh, R.string.action_reset, c.secondary).apply {
         setOnClickListener { listener.onRecordReset() }
     }
     private val visualizer = VisualizerView(context, c.primary.fill).apply {
         background = GradientDrawable().apply {
-            cornerRadii = Slot.LAST.radii(outerCorner, innerCorner)
+            cornerRadius = outerCorner
             setColor(c.surfaceHigh)
         }
     }
@@ -161,8 +160,8 @@ class CaptureOverlayView(
     }
 
     private fun tile(weight: Float = 1f) = LinearLayout.LayoutParams(0, dp(TILE_DP).toInt(), weight).apply {
-        marginStart = dp(1f).toInt()
-        marginEnd = dp(1f).toInt()
+        marginStart = dp(5f).toInt()
+        marginEnd = dp(5f).toInt()
     }
 
     /** Top-right corner of the framed screenshot: throw the capture away (nothing is saved until Save/Edit). */
@@ -562,12 +561,11 @@ class CaptureOverlayView(
         }
     }
 
-    /** Tile in the connected button group: icon over a caption, big corners outside and small ones where it joins. */
+    /** Separate rounded tile: icon over a caption. */
     private inner class ActionButton(
         icon: Int,
         label: Int,
         private val tone: Tone,
-        slot: Slot,
     ) : LinearLayout(context) {
 
         private val iconView = ImageView(context)
@@ -579,7 +577,7 @@ class CaptureOverlayView(
             isClickable = true
             isFocusable = true
             fun shape(color: Int) = GradientDrawable().apply {
-                cornerRadii = slot.radii(outerCorner, innerCorner)
+                cornerRadius = outerCorner
                 setColor(color)
             }
             background = RippleDrawable(ColorStateList.valueOf(tone.content and 0x00FFFFFF or 0x33000000), shape(tone.fill), shape(Color.WHITE))
@@ -612,17 +610,6 @@ class CaptureOverlayView(
 
     private class Tone(val fill: Int, val content: Int)
 
-    /** Where a tile sits in the group: only the outer ends get the big corner. */
-    private enum class Slot {
-        FIRST, MIDDLE, LAST;
-
-        fun radii(outer: Float, inner: Float): FloatArray {
-            val l = if (this == FIRST) outer else inner
-            val r = if (this == LAST) outer else inner
-            return floatArrayOf(l, l, r, r, r, r, l, l)
-        }
-    }
-
     /**
      * Dark Material 3 colours. On Android 12+ they come from the wallpaper's tonal palettes (the same
      * ones the app's dynamic colour uses); older phones get the baseline purple.
@@ -632,8 +619,6 @@ class CaptureOverlayView(
         private fun pick(id: Int, fallback: Long): Int =
             if (dynamic) context.getColor(id) else fallback.toInt()
 
-        val backdropTop = pick(android.R.color.system_neutral1_900, 0xFF141218)
-        val backdropBottom = pick(android.R.color.system_accent1_900, 0xFF2B2236)
         val surfaceHigh = pick(android.R.color.system_neutral1_800, 0xFF2B2930)
         val onSurface = pick(android.R.color.system_neutral1_100, 0xFFE6E0E9)
         val ripple = pick(android.R.color.system_neutral1_100, 0xFFE6E0E9) and 0x00FFFFFF or 0x33000000
