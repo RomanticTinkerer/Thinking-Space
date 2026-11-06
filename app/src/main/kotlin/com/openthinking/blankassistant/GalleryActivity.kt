@@ -267,7 +267,7 @@ private fun GalleryScreen(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             LargeFlexibleTopAppBar(
-                title = { Text(if (selecting) "${chosen.size} selected" else "OpenThinking Space") },
+                title = { Text(if (selecting) "${chosen.size} selected" else "Thinking Space") },
                 subtitle = {
                     if (!selecting && !shots.isNullOrEmpty()) {
                         Text(if (shots.size == 1) "1 memory" else "${shots.size} memories")
@@ -419,7 +419,7 @@ private fun DefaultBanner(onSetDefault: () -> Unit) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Make this your default assistant", style = MaterialTheme.typography.titleMediumEmphasized)
             Text(
-                "Then holding the power button captures the screen into OpenThinking Space.",
+                "Then holding the power button captures the screen into Thinking Space.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Button(onClick = onSetDefault, shapes = ButtonDefaults.shapes()) { Text("Set as default") }

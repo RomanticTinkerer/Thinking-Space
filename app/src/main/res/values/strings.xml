@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OpenThinking Space</string>
+    <string name="app_name">Thinking Space</string>
 
     <string name="action_edit">Edit</string>
     <string name="action_record">Record</string>
@@ -13,7 +13,7 @@
     <string name="status_recording">Recording  %1$s</string>
     <string name="status_note_attached">Voice note attached  %1$s</string>
 
-    <string name="msg_screenshot_unavailable">Couldn\u2019t capture this screen.\nTurn on \u201cUse screenshot\u201d for OpenThinking Space in the Digital assistant app settings. Secure screens (banking, etc.) can\u2019t be captured.</string>
+    <string name="msg_screenshot_unavailable">Couldn\u2019t capture this screen.\nTurn on \u201cUse screenshot\u201d for Thinking Space in the Digital assistant app settings. Secure screens (banking, etc.) can\u2019t be captured.</string>
     <string name="msg_saved">Saved to OpenThinking Space Screenshots</string>
     <string name="msg_saved_with_note">Saved with voice note</string>
     <string name="msg_save_failed">Couldn\u2019t save the screenshot</string>

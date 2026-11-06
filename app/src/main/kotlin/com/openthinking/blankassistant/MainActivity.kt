@@ -143,7 +143,7 @@ private fun SettingsScreen(
         topBar = {
             LargeFlexibleTopAppBar(
                 title = { Text("Settings") },
-                subtitle = { Text("OpenThinking Space") },
+                subtitle = { Text("Thinking Space") },
                 navigationIcon = {
                     FilledTonalIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
@@ -169,7 +169,7 @@ private fun SettingsScreen(
                     {
                         SettingRow(
                             Icons.Rounded.AutoAwesome, "Default assistant",
-                            if (isDefault) "On. Hold the power button to capture the screen." else "Off. Tap to choose OpenThinking Space.",
+                            if (isDefault) "On. Hold the power button to capture the screen." else "Off. Tap to choose Thinking Space.",
                             onClick = onDefaultAssistant,
                         )
                     },

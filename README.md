@@ -1,8 +1,8 @@
-# OpenThinking Space
+# Thinking Space
 
 An open, offline take on Nothing's **Essential Space** for any Android 11+ phone.
 
-Essential Space turns a button press into a memory: a screenshot, a voice note, a task or a reminder, all searchable later. It only works on Nothing phones, and its smarter parts run in the cloud. OpenThinking Space does the capture-and-recall part on any phone, keeps everything on the device, and has no internet permission.
+Essential Space turns a button press into a memory: a screenshot, a voice note, a task or a reminder, all searchable later. It only works on Nothing phones, and its smarter parts run in the cloud. Thinking Space does the capture-and-recall part on any phone, keeps everything on the device, and has no internet permission.
 
 ## How it works
 
@@ -16,7 +16,7 @@ Everything lands in the shared `Pictures/OpenThinking Space Screenshots` album, 
 
 ## What carries over from Essential Space
 
-| Essential Space | OpenThinking Space |
+| Essential Space | Thinking Space |
 | --- | --- |
 | Essential Key capture | Default-assistant gesture (power button hold) |
 | Screenshot with a voice note | Yes, pinned to the screenshot |
