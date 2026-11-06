@@ -15,7 +15,21 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -82,6 +96,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -96,6 +111,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
@@ -108,6 +124,7 @@ import com.openthinking.blankassistant.storage.CaptureStore.Shot
 import com.openthinking.blankassistant.storage.MemoryMeta
 import com.openthinking.blankassistant.ui.OtsTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -299,7 +316,7 @@ private fun GalleryScreen(
         modifier = Modifier.background(wash),
         containerColor = Color.Transparent,
         floatingActionButton = {
-            if (!selecting) {
+            AnimatedVisibility(visible = !selecting, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SmallFloatingActionButton(onClick = onMemo) {
                         Icon(Icons.Rounded.Mic, contentDescription = "Record a voice memo")
@@ -315,10 +332,9 @@ private fun GalleryScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        if (selecting) "${chosen.size} selected" else "Thinking Space",
-                        style = MaterialTheme.typography.titleLargeEmphasized,
-                    )
+                    Crossfade(if (selecting) "${chosen.size} selected" else "Thinking Space", label = "title") {
+                        Text(it, style = MaterialTheme.typography.titleLargeEmphasized)
+                    }
                 },
                 navigationIcon = {
                     if (selecting) {
@@ -421,7 +437,10 @@ private fun GalleryScreen(
                                 }
                             }
                         }
-                        if (unscanned > 0) {
+                        // Keeps the last count while the row slides away, so it never says "0 screenshots".
+                        var lastCount by remember { mutableIntStateOf(1) }
+                        LaunchedEffect(unscanned) { if (unscanned > 0) lastCount = unscanned }
+                        AnimatedVisibility(unscanned > 0, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -429,7 +448,7 @@ private fun GalleryScreen(
                             ) {
                                 LoadingIndicator(Modifier.size(36.dp))
                                 Text(
-                                    "Reading text in $unscanned screenshot${if (unscanned == 1) "" else "s"}",
+                                    "Reading text in $lastCount screenshot${if (lastCount == 1) "" else "s"}",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -459,6 +478,7 @@ private fun GalleryScreen(
                         selected = isSelected,
                         onClick = { if (selecting) toggle() else onOpen(shot) },
                         onLongClick = ::toggle,
+                        modifier = Modifier.animateItem(), // cards glide when one is deleted, pinned or filtered out
                     )
                 }
             }
@@ -511,6 +531,10 @@ private fun GalleryScreen(
  */
 @Composable
 private fun Hero(total: Int, pinned: Int, voice: Int) {
+    // Counts up from 0 on first show, and ticks to the new number when it changes.
+    var target by remember { mutableIntStateOf(0) }
+    LaunchedEffect(total) { target = total }
+    val shown by animateIntAsState(target, tween(800, easing = FastOutSlowInEasing), label = "count")
     val scheme = MaterialTheme.colorScheme
     Box(
         Modifier
@@ -541,7 +565,7 @@ private fun Hero(total: Int, pinned: Int, voice: Int) {
                 color = scheme.onPrimary.copy(alpha = 0.85f),
             )
             Text(
-                "$total",
+                "$shown",
                 style = MaterialTheme.typography.displayLargeEmphasized,
                 color = scheme.onPrimary,
             )
@@ -623,8 +647,19 @@ private fun ShotCard(
     selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val thumb by produceState<ImageBitmap?>(null, shot.uri) { value = loadThumb(shot.uri) }
+    // The first cards rise in one after another. Later ones (scrolled into view) just appear.
+    val appear = remember { Animatable(if (index < 10) 0f else 1f) }
+    LaunchedEffect(Unit) {
+        if (appear.value < 1f) {
+            delay(index * 50L)
+            appear.animateTo(1f, spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessLow))
+        }
+    }
+    val thumbAlpha by animateFloatAsState(if (thumb != null) 1f else 0f, tween(300), label = "thumb")
+    val shade by animateFloatAsState(if (selected) 0.25f else 0f, label = "shade")
     val scale by animateFloatAsState(if (selected) 0.92f else 1f, label = "select")
     val scheme = MaterialTheme.colorScheme
     val (frame, onFrame) = when (index % 3) {
@@ -636,7 +671,11 @@ private fun ShotCard(
         shape = cardShapes[index % cardShapes.size],
         colors = CardDefaults.cardColors(containerColor = frame, contentColor = onFrame),
         border = if (selected) BorderStroke(3.dp, scheme.primary) else null,
-        modifier = Modifier
+        modifier = modifier
+            .graphicsLayer {
+                alpha = appear.value.coerceIn(0f, 1f)
+                translationY = (1f - appear.value) * 56.dp.toPx()
+            }
             .scale(scale)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
@@ -652,19 +691,23 @@ private fun ShotCard(
                     Image(
                         bitmap = it,
                         contentDescription = if (shot.noteUri != null) "Screenshot with a voice note" else "Screenshot",
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().graphicsLayer { alpha = thumbAlpha },
                         contentScale = ContentScale.Crop,
                         alignment = Alignment.TopCenter,
                     )
                 }
-                if (selected) Box(Modifier.fillMaxSize().background(scheme.primary.copy(alpha = 0.25f)))
-                if (selecting) {
+                if (shade > 0f) Box(Modifier.fillMaxSize().background(scheme.primary.copy(alpha = shade)))
+                AnimatedVisibility(
+                    visible = selecting,
+                    modifier = Modifier.align(Alignment.TopEnd),
+                    enter = scaleIn() + fadeIn(),
+                    exit = scaleOut() + fadeOut(),
+                ) {
                     Icon(
                         if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
                         contentDescription = if (selected) "Selected" else "Not selected",
                         tint = if (selected) scheme.primary else Color.White,
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
                             .padding(12.dp)
                             .size(26.dp)
                             .then(if (selected) Modifier.background(Color.White, CircleShape) else Modifier),
