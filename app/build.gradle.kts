@@ -13,7 +13,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
-        // ONNX Runtime and Tesseract ship a native library per CPU type. Phones are arm64; skipping the
+        // ONNX Runtime ships a native library per CPU type. Phones are arm64; skipping the
         // rest saves about 100 MB. Add "armeabi-v7a" or "x86_64" here for old phones or an emulator.
         ndk { abiFilters += "arm64-v8a" }
     }
@@ -40,8 +40,8 @@ dependencies {
     // Vendored ReFra markup + crop editor. Launched by class name; its manifest merges in.
     implementation(project(":editor"))
     implementation("com.jakewharton.timber:timber:5.0.1")
-    // Offline OCR: Tesseract 5 (Apache-2.0) through Tesseract4Android (Apache-2.0).
-    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
+    // Offline OCR: PaddleOCR models (Apache-2.0) run through ONNX Runtime (the editor module uses it too).
+    implementation(libs.onnxruntime.android)
     // Gallery + viewer UI: Material 3 with wallpaper-derived (dynamic) colours.
     implementation(libs.compose.foundation)
     implementation(libs.compose.ui)
@@ -49,4 +49,5 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.activity)
+    testImplementation("junit:junit:4.13.2")
 }

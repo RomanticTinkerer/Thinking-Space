@@ -239,7 +239,7 @@ private fun SettingsScreen(
                     {
                         SettingRow(
                             Icons.Rounded.Description, "Open source licences",
-                            "Tesseract, ReFra, Dimowner recorder, ONNX models and Google Sans Flex.",
+                            "PaddleOCR, ReFra, Dimowner recorder, ONNX models and Google Sans Flex.",
                             onClick = { onOpen("$REPO/blob/main/THIRD_PARTY_NOTICES.md") },
                         )
                     },

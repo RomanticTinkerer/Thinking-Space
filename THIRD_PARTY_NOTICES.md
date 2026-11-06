@@ -52,14 +52,12 @@ vendored sources stay byte-comparable with upstream.
 
 Toolchain versions in `gradle/libs.versions.toml` (AGP, Kotlin, Compose) match ReFra's for the same reason.
 
-## Tesseract OCR — Apache License 2.0
-Used to read text from screenshots, fully offline.
+## PaddleOCR — Apache License 2.0
+Used to read text from screenshots, fully offline. Run through ONNX Runtime (MIT, see below).
 
-- **Tesseract4Android** 4.9.0 (https://github.com/adaptech-cz/Tesseract4Android), Apache-2.0. Pulled in as a Gradle
-  dependency from JitPack, not vendored. It is a fork of tess-two and bundles Tesseract 5.5.1 (Apache-2.0),
-  Leptonica 1.85.0 (BSD-2-Clause), libjpeg 9f and libpng 1.6.48 (both permissive).
-- **tessdata_fast** `eng.traineddata` (https://github.com/tesseract-ocr/tessdata_fast), Apache-2.0. Unmodified, shipped in
-  `app/src/main/assets/tessdata/`. License text: `licenses/LICENSE-tessdata_fast.txt`.
+- **PP-OCRv4 mobile text detector** `ch_PP-OCRv4_det_infer.onnx`, from https://huggingface.co/SWHL/RapidOCR (a PaddleOCR export to ONNX), Apache-2.0.
+- **PP-OCRv5 English mobile recogniser** `rec.onnx` and its character list `dict.txt`, from https://huggingface.co/monkt/paddleocr-onnx (a PaddleOCR export to ONNX), Apache-2.0.
+- Both are unmodified, renamed to `det.onnx` and `rec.onnx`, and shipped in `app/src/main/assets/ocr/`. Models by https://github.com/PaddlePaddle/PaddleOCR. License text: `licenses/LICENSE-PaddleOCR.txt`.
 
 ## Google Sans Flex — SIL Open Font License 1.1
 The app's typeface, shipped as `editor/src/main/res/font/google_sans_flex.ttf` (the variable font, unmodified).
