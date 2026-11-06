@@ -3,11 +3,4 @@
     <color name="ic_launcher_background">#202124</color>
     <color name="ic_launcher_dot">#FFFFFF</color>
 
-    <!-- Capture overlay (flat, neutral; red is reserved for "recording"). -->
-    <color name="capture_scrim">#000000</color>
-    <color name="capture_border">#FFFFFF</color>
-    <color name="capture_surface">#FF1F1F23</color>
-    <color name="capture_button">#FF3A3A40</color>
-    <color name="capture_button_active">#FFE5484D</color>
-    <color name="capture_label">#FFE6E6EA</color>
 </resources>

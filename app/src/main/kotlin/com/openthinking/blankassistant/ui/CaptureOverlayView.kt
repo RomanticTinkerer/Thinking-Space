@@ -1,6 +1,7 @@
 package com.openthinking.blankassistant.ui
 
 import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
@@ -10,13 +11,8 @@ import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Matrix
 import android.graphics.Outline
 import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.PathMeasure
-import android.graphics.RectF
-import android.graphics.SweepGradient
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
@@ -29,7 +25,6 @@ import android.view.ViewOutlineProvider
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
-import android.view.animation.LinearInterpolator
 import android.view.animation.OvershootInterpolator
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
@@ -43,9 +38,9 @@ import java.util.Locale
 /**
  * Full-screen assistant overlay.
  *
- * When the screenshot arrives it is shown full-bleed (with a quick shutter flash), then zooms out
- * into a white-bordered, rounded thumbnail while a dimming scrim fades in. Below it sits a pill with
- * three actions: Edit (pencil), Record (mic) and Save. A thin light runs round the screen edge as it opens.
+ * When the screenshot arrives it is shown full-bleed (with a quick shutter flash), then morphs down
+ * into a rounded thumbnail over a tinted backdrop. Below it sits a connected group of three tiles:
+ * Edit (filled), Record and Save (tonal). Colours follow the wallpaper on Android 12+ (see [Palette]).
  *
  * It is a plain [View] tree with no AndroidX/Material dependency, because it lives in the
  * assistant session window rather than in an Activity.
@@ -68,6 +63,9 @@ class CaptureOverlayView(
 
     private val density = resources.displayMetrics.density
     private fun dp(value: Float): Float = value * density
+    private val c = Palette(context)
+    private val outerCorner = dp(DesignLanguages.default.heroCorner.value)
+    private val innerCorner = dp(DesignLanguages.default.joinCorner.value + 2f)
 
     private val screenBounds = context.getSystemService(WindowManager::class.java)
         .maximumWindowMetrics.bounds
@@ -79,26 +77,20 @@ class CaptureOverlayView(
     // --- Views -------------------------------------------------------------------------------
 
     private val scrim = View(context).apply {
-        setBackgroundColor(context.getColor(R.color.capture_scrim))
+        background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(c.backdropTop, c.backdropBottom))
         alpha = 0f
         setOnClickListener { listener.onDismiss() }
     }
 
     private val imageView = ImageView(context).apply { scaleType = ImageView.ScaleType.FIT_XY }
-    private val borderView = BorderView(context).apply { alpha = 0f }
 
-    /** Holds the screenshot + its white border; this is the thing that scales down. */
+    /** Holds the screenshot; this is the thing that morphs down. */
     private val frame = FrameLayout(context).apply {
         visibility = INVISIBLE
         // Swallow taps so touching the screenshot itself doesn't fall through to the dismiss scrim.
         isClickable = true
         addView(imageView, LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        addView(borderView, LayoutParams(MATCH_PARENT, MATCH_PARENT))
     }
-
-    /** The thin light that runs round the real edge of the screen while the capture is up. */
-    private val edge = EdgeGlowView(context).apply { alpha = 0f }
-    private var spin: ValueAnimator? = null
 
     private val flash = View(context).apply {
         setBackgroundColor(Color.WHITE)
@@ -107,74 +99,82 @@ class CaptureOverlayView(
 
     private val message = TextView(context).apply {
         flex(DesignLanguages.default.type.bodyLarge)
-        setTextColor(context.getColor(R.color.capture_label))
+        setTextColor(c.onSurface)
         textSize = 16f
         gravity = Gravity.CENTER
         visibility = GONE
         setPadding(dp(32f).toInt(), 0, dp(32f).toInt(), 0)
     }
 
+    /** A small tonal chip above the buttons: recording time or "voice note attached". */
     private val statusText = TextView(context).apply {
         flex(DesignLanguages.default.type.labelLarge)
-        setTextColor(context.getColor(R.color.capture_label))
+        setTextColor(c.secondary.content)
         textSize = 14f
         gravity = Gravity.CENTER
         visibility = GONE
+        background = GradientDrawable().apply {
+            cornerRadius = dp(100f)
+            setColor(c.secondary.fill)
+        }
+        setPadding(dp(16f).toInt(), dp(7f).toInt(), dp(16f).toInt(), dp(7f).toInt())
     }
-    private val editButton = ActionButton(R.drawable.ic_edit, R.string.action_edit).apply {
+    private val editButton = ActionButton(R.drawable.ic_edit, R.string.action_edit, c.primary, Slot.FIRST).apply {
         setOnClickListener { listener.onEdit() }
     }
-    private val recordButton = ActionButton(R.drawable.ic_mic, R.string.action_record).apply {
+    private val recordButton = ActionButton(R.drawable.ic_mic, R.string.action_record, c.secondary, Slot.MIDDLE).apply {
         setOnClickListener { listener.onRecordToggle() }
     }
-    private val saveButton = ActionButton(R.drawable.ic_save, R.string.action_save).apply {
+    private val saveButton = ActionButton(R.drawable.ic_save, R.string.action_save, c.tertiary, Slot.LAST).apply {
         setOnClickListener { listener.onSave() }
     }
 
-    // While recording the pill shows: [Stop] [Reset] [live level bars] instead of the three actions.
-    private val stopButton = ActionButton(R.drawable.ic_stop, R.string.action_stop).apply {
-        set(R.drawable.ic_stop, R.string.action_stop, active = true)
+    // While recording the group shows: [Stop] [Reset] [live level bars] instead of the three actions.
+    private val stopButton = ActionButton(R.drawable.ic_stop, R.string.action_stop, c.error, Slot.FIRST).apply {
         setOnClickListener { listener.onRecordToggle() }
     }
-    private val resetButton = ActionButton(R.drawable.ic_refresh, R.string.action_reset).apply {
+    private val resetButton = ActionButton(R.drawable.ic_refresh, R.string.action_reset, c.secondary, Slot.MIDDLE).apply {
         setOnClickListener { listener.onRecordReset() }
     }
-    private val visualizer = VisualizerView(context)
+    private val visualizer = VisualizerView(context, c.primary.fill).apply {
+        background = GradientDrawable().apply {
+            cornerRadii = Slot.LAST.radii(outerCorner, innerCorner)
+            setColor(c.surfaceHigh)
+        }
+    }
     private val recordingRow = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         visibility = GONE
-        addView(stopButton)
-        addView(resetButton)
-        addView(visualizer, LinearLayout.LayoutParams(dp(150f).toInt(), dp(56f).toInt()).apply {
-            marginStart = dp(4f).toInt()
-            marginEnd = dp(8f).toInt()
-        })
+        addView(stopButton, tile())
+        addView(resetButton, tile())
+        addView(visualizer, tile(1.3f))
     }
 
     private val pill = LinearLayout(context).apply {
-        isClickable = true // same: gaps between the buttons must not dismiss
+        isClickable = true // gaps between the tiles must not dismiss
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER
-        background = GradientDrawable().apply {
-            cornerRadius = dp(36f)
-            setColor(context.getColor(R.color.capture_surface))
-        }
-        setPadding(dp(10f).toInt(), dp(12f).toInt(), dp(10f).toInt(), dp(10f).toInt())
-        addView(editButton)
-        addView(recordButton)
-        addView(saveButton)
-        addView(recordingRow)
+        addView(editButton, tile())
+        addView(recordButton, tile())
+        addView(saveButton, tile())
+        addView(recordingRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+    }
+
+    private fun tile(weight: Float = 1f) = LinearLayout.LayoutParams(0, dp(TILE_DP).toInt(), weight).apply {
+        marginStart = dp(1f).toInt()
+        marginEnd = dp(1f).toInt()
     }
 
     /** Top-right corner of the framed screenshot: throw the capture away (nothing is saved until Save/Edit). */
     private val deleteButton = ImageView(context).apply {
         setImageResource(R.drawable.ic_delete)
+        imageTintList = ColorStateList.valueOf(c.onSurface)
         contentDescription = context.getString(R.string.action_discard)
         val pad = dp(10f).toInt()
         setPadding(pad, pad, pad, pad)
         background = RippleDrawable(
-            ColorStateList.valueOf(0x40FFFFFF),
-            GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(context.getColor(R.color.capture_surface)) },
+            ColorStateList.valueOf(c.ripple),
+            GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(c.surfaceHigh) },
             null,
         )
         alpha = 0f
@@ -189,24 +189,32 @@ class CaptureOverlayView(
         alpha = 0f
         addView(
             statusText,
-            LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { bottomMargin = dp(12f).toInt() },
+            LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { bottomMargin = dp(14f).toInt() },
         )
-        addView(pill)
+        addView(pill, LinearLayout.LayoutParams(minOf(screenW - dp(32f).toInt(), dp(420f).toInt()), WRAP_CONTENT))
     }
 
     private var frameCornerRadius = 0f
     private var shown = false
+    private var busy = false
+
+    // End state of the capture animation, and the animators that lead there.
+    private var endScale = 1f
+    private var endTranslationY = 0f
+    private var endRadius = 0f
+    private var waiting: Animator? = null
+    private var running: Animator? = null
+    private val settleRunnable = Runnable { settle() }
 
     init {
         addView(scrim, LayoutParams(MATCH_PARENT, MATCH_PARENT))
         addView(frame, LayoutParams(screenW, screenH, Gravity.TOP or Gravity.START))
         addView(flash, LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        addView(edge, LayoutParams(MATCH_PARENT, MATCH_PARENT))
         addView(deleteButton, LayoutParams(dp(DELETE_DP).toInt(), dp(DELETE_DP).toInt(), Gravity.TOP or Gravity.START))
         addView(message, LayoutParams(MATCH_PARENT, MATCH_PARENT, Gravity.CENTER))
         addView(
             controls,
-            // MATCH_PARENT width: with WRAP_CONTENT the pill got squeezed to the status text's width.
+            // MATCH_PARENT width: with WRAP_CONTENT the button group got squeezed to the status text's width.
             LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM).apply {
                 bottomMargin = dp(28f).toInt()
             },
@@ -233,14 +241,19 @@ class CaptureOverlayView(
 
     /** Resets to the empty "waiting for screenshot" state: just a gently dimmed screen. */
     fun prepare() {
+        stopAnimations()
         shown = false
+        flash.alpha = 0f
+        frame.scaleX = 1f
+        frame.scaleY = 1f
+        frame.translationY = 0f
+        controls.translationY = 0f
         frame.visibility = INVISIBLE
         controls.visibility = INVISIBLE
         controls.alpha = 0f
         deleteButton.alpha = 0f
         deleteButton.visibility = INVISIBLE
         message.visibility = GONE
-        borderView.alpha = 0f
         controls.scaleX = 1f
         controls.scaleY = 1f
         deleteButton.scaleX = 1f
@@ -250,12 +263,11 @@ class CaptureOverlayView(
             button.scaleX = 1f
             button.scaleY = 1f
         }
-        stopEdge()
         scrim.alpha = 0f
         setNoteState(NoteState.NONE)
         setBusy(false)
         if (ValueAnimator.areAnimatorsEnabled()) {
-            ObjectAnimator.ofFloat(scrim, ALPHA, 0f, SCRIM_ALPHA_WAITING).setDuration(160).start()
+            waiting = ObjectAnimator.ofFloat(scrim, ALPHA, 0f, SCRIM_ALPHA_WAITING).setDuration(160).apply { start() }
         } else {
             scrim.alpha = SCRIM_ALPHA_WAITING
         }
@@ -270,8 +282,7 @@ class CaptureOverlayView(
 
         val scale = targetScale()
         val translationY = targetTranslationY()
-        frameCornerRadius = dp(CORNER_DP) / scale
-        borderView.configure(strokePx = dp(BORDER_DP) / scale, radiusPx = frameCornerRadius)
+        frameCornerRadius = outerCorner / scale
         frame.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
                 outline.setRoundRect(0, 0, view.width, view.height, frameCornerRadius)
@@ -292,15 +303,14 @@ class CaptureOverlayView(
         deleteButton.y = frameTop + dp(12f)
         deleteButton.visibility = VISIBLE
 
+        endScale = scale
+        endTranslationY = translationY
+        endRadius = frameCornerRadius
+        waiting?.cancel()
+        waiting = null
+
         if (!ValueAnimator.areAnimatorsEnabled()) {
-            deleteButton.alpha = 1f
-            frame.scaleX = scale
-            frame.scaleY = scale
-            frame.translationY = translationY
-            borderView.alpha = 1f
-            scrim.alpha = SCRIM_ALPHA_FINAL
-            controls.alpha = 1f
-            showEdge(animate = false)
+            settle()
             return
         }
 
@@ -308,37 +318,32 @@ class CaptureOverlayView(
         // backdrop move as a single thing instead of separate effects.
         val glide = PathInterpolator(0.2f, 0f, 0f, 1f)
         val fromRadius = cornerRadiusPx()
-        val toRadius = frameCornerRadius
+        val scrimFrom = scrim.alpha
         frameCornerRadius = fromRadius
-        val borderStroke = dp(BORDER_DP) / scale
 
-        val shutter = ObjectAnimator.ofFloat(flash, ALPHA, 0.5f, 0f).setDuration(140)
-
-        // The backdrop goes fully opaque quickly: nothing of the real screen may show around the shrinking frame.
-        val backdrop = ObjectAnimator.ofFloat(scrim, ALPHA, scrim.alpha, SCRIM_ALPHA_FINAL).apply {
-            duration = 200
-            interpolator = LinearInterpolator()
-        }
-
+        // The shutter flash and the backdrop are driven by this same animator (from its play time), so
+        // they can never be left half-way if a separate animator stalls: the white flash used to stick.
         val morph = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = MORPH_MS
             interpolator = glide
             addUpdateListener {
                 val t = it.animatedValue as Float
-                val s = 1f + (scale - 1f) * t
+                val ms = it.currentPlayTime.toFloat()
+                val s = 1f + (endScale - 1f) * t
                 frame.scaleX = s
                 frame.scaleY = s
-                frame.translationY = translationY * t
+                frame.translationY = endTranslationY * t
                 // The screen's own rounded corners ease into the thumbnail's corners.
-                frameCornerRadius = fromRadius + (toRadius - fromRadius) * t
+                frameCornerRadius = fromRadius + (endRadius - fromRadius) * t
                 frame.invalidateOutline()
-                borderView.configure(borderStroke, frameCornerRadius)
-                borderView.alpha = ((t - 0.35f) / 0.65f).coerceIn(0f, 1f)
+                flash.alpha = (0.5f * (1f - ms / SHUTTER_MS)).coerceIn(0f, 0.5f)
+                // The backdrop goes fully opaque quickly: nothing of the real screen may show around the frame.
+                scrim.alpha = scrimFrom + (SCRIM_ALPHA_FINAL - scrimFrom) * (ms / BACKDROP_MS).coerceIn(0f, 1f)
             }
         }
 
-        // Everything else just appears once the frame has mostly settled: the pill fades up and grows
-        // a little, then its buttons pop in one after another.
+        // Everything else just appears once the frame has mostly settled: the buttons fade up and grow
+        // a little, then pop in one after another.
         val appearAt = (MORPH_MS * 0.45f).toLong()
         val pop = OvershootInterpolator(1.6f)
         val actionsIn = AnimatorSet().apply {
@@ -373,60 +378,59 @@ class CaptureOverlayView(
         deleteButton.scaleX = 0.5f
         deleteButton.scaleY = 0.5f
 
-        AnimatorSet().apply {
-            playTogether(listOf<Animator>(shutter, backdrop, morph, actionsIn))
+        running = AnimatorSet().apply {
+            playTogether(listOf<Animator>(morph, actionsIn))
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (running === animation) settle()
+                }
+            })
             start()
         }
-        showEdge(animate = true)
+        // Safety net: if the animators never get frames (window not drawing yet), jump to the end state anyway.
+        removeCallbacks(settleRunnable)
+        postDelayed(settleRunnable, MORPH_MS + appearAt + 1000)
     }
 
-    /**
-     * Draws the edge light in around the screen border, from the bottom centre outwards, while the
-     * screenshot shrinks. Afterwards its colours drift slowly round the border until the overlay closes.
-     */
-    private fun showEdge(animate: Boolean) {
-        edge.configure(cornerRadiusPx(), edgeColors(), edgeThicknessPx())
-        if (!animate) {
-            edge.progress = 1f
-            edge.alpha = 1f
-            return
+    /** Jumps to the finished layout. Idempotent; also what runs when animations are off. */
+    private fun settle() {
+        removeCallbacks(settleRunnable)
+        running?.let { running = null; it.cancel() }
+        if (!shown) return
+        flash.alpha = 0f
+        scrim.alpha = SCRIM_ALPHA_FINAL
+        frame.scaleX = endScale
+        frame.scaleY = endScale
+        frame.translationY = endTranslationY
+        frameCornerRadius = endRadius
+        frame.invalidateOutline()
+        controls.alpha = if (busy) 0.5f else 1f
+        controls.scaleX = 1f
+        controls.scaleY = 1f
+        controls.translationY = 0f
+        deleteButton.alpha = 1f
+        deleteButton.scaleX = 1f
+        deleteButton.scaleY = 1f
+        for (button in listOf(editButton, recordButton, saveButton)) {
+            button.alpha = 1f
+            button.scaleX = 1f
+            button.scaleY = 1f
         }
-        edge.progress = 0f
-        ObjectAnimator.ofFloat(edge, ALPHA, 0f, 1f).setDuration(220).start()
-        ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 720
-            startDelay = 40
-            interpolator = PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
-            addUpdateListener { edge.progress = it.animatedValue as Float }
-            start()
-        }
-        spin = ValueAnimator.ofFloat(0f, 360f).apply {
-            duration = 6000
-            repeatCount = ValueAnimator.INFINITE
-            interpolator = LinearInterpolator()
-            addUpdateListener { edge.spin = it.animatedValue as Float }
-            start()
-        }
+        invalidate()
     }
 
-    private fun stopEdge() {
-        spin?.cancel()
-        spin = null
-        edge.alpha = 0f
-        edge.progress = 0f
+    private fun stopAnimations() {
+        removeCallbacks(settleRunnable)
+        waiting?.cancel()
+        waiting = null
+        running?.let { running = null; it.cancel() }
     }
 
     override fun onDetachedFromWindow() {
-        stopEdge()
+        stopAnimations()
+        flash.alpha = 0f
         super.onDetachedFromWindow()
     }
-
-    /**
-     * Edge light thickness in pixels, scaled to the screen so it reads the same on every phone: 4 px on a
-     * 720-wide screen (HD+), 6 px on 1080 (FHD+), 8 px on 1440 (QHD+). The physical bezel, curved edge and
-     * corner mask eat the outermost pixels, so the line is also drawn a little in from the very edge.
-     */
-    private fun edgeThicknessPx(): Float = (minOf(screenW, screenH) / 720f * 4f).coerceIn(4f, 10f)
 
     /** The phone's real screen corner radius when Android reports it (12+), otherwise a typical one. */
     private fun cornerRadiusPx(): Float {
@@ -439,21 +443,6 @@ class CaptureOverlayView(
             if (radii.isNotEmpty()) return radii.average().toFloat()
         }
         return dp(28f)
-    }
-
-    /** Wallpaper accents on Android 12+, a soft blue, violet and pink on older versions. */
-    private fun edgeColors(): IntArray {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val a = context.getColor(android.R.color.system_accent1_300)
-            return intArrayOf(
-                a,
-                context.getColor(android.R.color.system_accent3_300),
-                context.getColor(android.R.color.system_accent2_200),
-                context.getColor(android.R.color.system_accent1_200),
-                a,
-            )
-        }
-        return intArrayOf(0xFF8AB4F8.toInt(), 0xFFC58AF9.toInt(), 0xFFF28B82.toInt(), 0xFF8AB4F8.toInt())
     }
 
     /** No screenshot could be taken (setting off, secure screen...): explain, tap anywhere to close. */
@@ -472,7 +461,7 @@ class CaptureOverlayView(
         saveButton.visibility = if (recording) GONE else VISIBLE
         when (state) {
             NoteState.NONE -> {
-                recordButton.set(R.drawable.ic_mic, R.string.action_record, active = false)
+                recordButton.set(R.drawable.ic_mic, R.string.action_record)
                 statusText.visibility = GONE
             }
             NoteState.RECORDING -> {
@@ -481,7 +470,7 @@ class CaptureOverlayView(
                 statusText.visibility = VISIBLE
             }
             NoteState.RECORDED -> {
-                recordButton.set(R.drawable.ic_mic, R.string.action_rerecord, active = false)
+                recordButton.set(R.drawable.ic_mic, R.string.action_rerecord)
                 statusText.text = context.getString(R.string.status_note_attached, formatDuration(durationMs))
                 statusText.visibility = VISIBLE
             }
@@ -495,6 +484,7 @@ class CaptureOverlayView(
     }
 
     fun setBusy(busy: Boolean) {
+        this.busy = busy
         controls.alpha = if (busy) 0.5f else if (controls.visibility == VISIBLE && shown) 1f else controls.alpha
         editButton.isEnabled = !busy
         recordButton.isEnabled = !busy
@@ -536,116 +526,12 @@ class CaptureOverlayView(
 
     // --- Parts -------------------------------------------------------------------------------
 
-    /**
-     * A light along the screen border with a faint halo; its thickness is in pixels (see
-     * [edgeThicknessPx]). [progress] 0..1 grows it from the bottom centre both ways round to the top and
-     * thickens it as it goes, so it morphs in rather than appearing at full weight; [spin] turns the gradient.
-     */
-    private class EdgeGlowView(context: Context) : View(context) {
-        private val core = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeCap = Paint.Cap.ROUND
-        }
-        private val halo = Paint(core).apply { alpha = 70 }
-        private var thickness = 4f
-        private val path = Path()
-        private val drawn = Path()
-        private val measure = PathMeasure()
-        private val turn = Matrix()
-        private var gradient: SweepGradient? = null
-        private var radius = 0f
-        private var colors = intArrayOf(Color.WHITE, Color.WHITE)
-
-        var progress = 0f
-            set(value) { field = value; invalidate() }
-        var spin = 0f
-            set(value) { field = value; invalidate() }
-
-        fun configure(cornerRadiusPx: Float, colors: IntArray, thicknessPx: Float) {
-            radius = cornerRadiusPx
-            this.colors = colors
-            thickness = thicknessPx
-            rebuild()
-        }
-
-        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = rebuild()
-
-        private fun rebuild() {
-            if (width == 0 || height == 0) return
-            // The line's centre sits one full thickness in from the screen edge, so the bezel and the curved
-            // glass at the very edge never cut into it.
-            val inset = thickness
-            val l = inset
-            val t = inset
-            val r = width - inset
-            val b = height - inset
-            val rad = (radius - inset).coerceIn(1f, minOf(r - l, b - t) / 2f)
-            val cx = width / 2f
-            // One closed loop that starts and ends at the bottom centre.
-            path.reset()
-            path.moveTo(cx, b)
-            path.lineTo(l + rad, b)
-            path.arcTo(RectF(l, b - 2 * rad, l + 2 * rad, b), 90f, 90f)
-            path.lineTo(l, t + rad)
-            path.arcTo(RectF(l, t, l + 2 * rad, t + 2 * rad), 180f, 90f)
-            path.lineTo(r - rad, t)
-            path.arcTo(RectF(r - 2 * rad, t, r, t + 2 * rad), 270f, 90f)
-            path.lineTo(r, b - rad)
-            path.arcTo(RectF(r - 2 * rad, b - 2 * rad, r, b), 0f, 90f)
-            path.lineTo(cx, b)
-            measure.setPath(path, false)
-            gradient = SweepGradient(cx, height / 2f, colors, null).also {
-                core.shader = it
-                halo.shader = it
-            }
-            invalidate()
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            val sweep = gradient ?: return
-            val half = measure.length / 2f * progress
-            if (half <= 0f) return
-            val weight = 0.35f + 0.65f * progress
-            core.strokeWidth = thickness * weight
-            halo.strokeWidth = thickness * 2.5f * weight
-            turn.setRotate(spin, width / 2f, height / 2f)
-            sweep.setLocalMatrix(turn)
-            drawn.reset()
-            measure.getSegment(0f, half, drawn, true)
-            measure.getSegment(measure.length - half, measure.length, drawn, true)
-            canvas.drawPath(drawn, halo)
-            canvas.drawPath(drawn, core)
-        }
-    }
-
-    /** Draws the white border inside the frame's bounds (so it scales down with the frame). */
-    private class BorderView(context: Context) : View(context) {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            color = context.getColor(R.color.capture_border)
-        }
-        private val rect = RectF()
-        private var radius = 0f
-
-        fun configure(strokePx: Float, radiusPx: Float) {
-            paint.strokeWidth = strokePx
-            radius = radiusPx
-            invalidate()
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            val half = paint.strokeWidth / 2f
-            rect.set(half, half, width - half, height - half)
-            canvas.drawRoundRect(rect, (radius - half).coerceAtLeast(0f), (radius - half).coerceAtLeast(0f), paint)
-        }
-    }
-
     /** Scrolling mic-level bars: newest level on the right. */
-    private class VisualizerView(context: Context) : View(context) {
+    private class VisualizerView(context: Context, barColor: Int) : View(context) {
         private val levels = FloatArray(BARS)
         private var head = 0
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = context.getColor(R.color.capture_label)
+            color = barColor
             strokeCap = Paint.Cap.ROUND
         }
 
@@ -676,51 +562,46 @@ class CaptureOverlayView(
         }
     }
 
-    /** Round icon button with a caption underneath. */
+    /** Tile in the connected button group: icon over a caption, big corners outside and small ones where it joins. */
     private inner class ActionButton(
         icon: Int,
         label: Int,
+        private val tone: Tone,
+        slot: Slot,
     ) : LinearLayout(context) {
 
-        private val fill = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(context.getColor(R.color.capture_button))
-        }
-        private val circle = FrameLayout(context)
         private val iconView = ImageView(context)
         private val labelView = TextView(context)
 
         init {
             orientation = VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
+            gravity = Gravity.CENTER
             isClickable = true
             isFocusable = true
-            setPadding(dp(14f).toInt(), 0, dp(14f).toInt(), 0)
-
-            val mask = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.WHITE)
+            fun shape(color: Int) = GradientDrawable().apply {
+                cornerRadii = slot.radii(outerCorner, innerCorner)
+                setColor(color)
             }
-            circle.background = RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), fill, mask)
-            val iconSize = dp(24f).toInt()
-            circle.addView(iconView, FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER))
-            val circleSize = dp(56f).toInt()
-            addView(circle, LayoutParams(circleSize, circleSize))
+            background = RippleDrawable(ColorStateList.valueOf(tone.content and 0x00FFFFFF or 0x33000000), shape(tone.fill), shape(Color.WHITE))
+
+            val iconSize = dp(26f).toInt()
+            iconView.imageTintList = ColorStateList.valueOf(tone.content)
+            addView(iconView, LayoutParams(iconSize, iconSize))
 
             labelView.flex(DesignLanguages.default.type.labelMedium)
-            labelView.setTextColor(context.getColor(R.color.capture_label))
-            labelView.textSize = 12f
+            labelView.setTextColor(tone.content)
+            labelView.textSize = 13f
             labelView.gravity = Gravity.CENTER
-            addView(labelView, LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = dp(6f).toInt() })
+            labelView.maxLines = 1
+            addView(labelView, LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = dp(5f).toInt() })
 
-            set(icon, label, active = false)
+            set(icon, label)
         }
 
-        fun set(icon: Int, label: Int, active: Boolean) {
+        fun set(icon: Int, label: Int) {
             iconView.setImageResource(icon)
             labelView.setText(label)
             contentDescription = context.getString(label)
-            fill.setColor(context.getColor(if (active) R.color.capture_button_active else R.color.capture_button))
         }
 
         override fun setEnabled(enabled: Boolean) {
@@ -729,10 +610,51 @@ class CaptureOverlayView(
         }
     }
 
+    private class Tone(val fill: Int, val content: Int)
+
+    /** Where a tile sits in the group: only the outer ends get the big corner. */
+    private enum class Slot {
+        FIRST, MIDDLE, LAST;
+
+        fun radii(outer: Float, inner: Float): FloatArray {
+            val l = if (this == FIRST) outer else inner
+            val r = if (this == LAST) outer else inner
+            return floatArrayOf(l, l, r, r, r, r, l, l)
+        }
+    }
+
+    /**
+     * Dark Material 3 colours. On Android 12+ they come from the wallpaper's tonal palettes (the same
+     * ones the app's dynamic colour uses); older phones get the baseline purple.
+     */
+    private class Palette(private val context: Context) {
+        private val dynamic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        private fun pick(id: Int, fallback: Long): Int =
+            if (dynamic) context.getColor(id) else fallback.toInt()
+
+        val backdropTop = pick(android.R.color.system_neutral1_900, 0xFF141218)
+        val backdropBottom = pick(android.R.color.system_accent1_900, 0xFF2B2236)
+        val surfaceHigh = pick(android.R.color.system_neutral1_800, 0xFF2B2930)
+        val onSurface = pick(android.R.color.system_neutral1_100, 0xFFE6E0E9)
+        val ripple = pick(android.R.color.system_neutral1_100, 0xFFE6E0E9) and 0x00FFFFFF or 0x33000000
+        val primary = Tone(
+            pick(android.R.color.system_accent1_200, 0xFFD0BCFF),
+            pick(android.R.color.system_accent1_800, 0xFF381E72),
+        )
+        val secondary = Tone(
+            pick(android.R.color.system_accent2_700, 0xFF4A4458),
+            pick(android.R.color.system_accent2_100, 0xFFE8DEF8),
+        )
+        val tertiary = Tone(
+            pick(android.R.color.system_accent3_700, 0xFF633B48),
+            pick(android.R.color.system_accent3_100, 0xFFFFD8E4),
+        )
+        val error = Tone(0xFFF2B8B5.toInt(), 0xFF601410.toInt()) // red stays red: it means "recording"
+    }
+
     private companion object {
         const val DELETE_DP = 44f
-        const val BORDER_DP = 6f
-        const val CORNER_DP = 20f
+        const val TILE_DP = 76f
         const val TOP_MARGIN_DP = 56f
         const val CONTROLS_RESERVE_DP = 176f
         const val MAX_SCALE = 0.66f
@@ -740,6 +662,8 @@ class CaptureOverlayView(
         const val SCRIM_ALPHA_FINAL = 1f // opaque: the real screen must not show behind the thumbnail
         const val SCRIM_ALPHA_MESSAGE = 0.72f
         const val MORPH_MS = 900L
+        const val SHUTTER_MS = 140f
+        const val BACKDROP_MS = 200f
         const val MAX_AMPLITUDE = 32767f
     }
 }
