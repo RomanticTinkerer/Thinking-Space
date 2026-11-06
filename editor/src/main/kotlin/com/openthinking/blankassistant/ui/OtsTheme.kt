@@ -30,16 +30,17 @@ import com.dot.gallery.R
 
 fun appPrefs(context: Context): SharedPreferences = context.applicationContext.getSharedPreferences("app", Context.MODE_PRIVATE)
 
-/** One font file (Roboto Flex is variable); each text style picks its own axes from the design language. */
+/** One font file (Google Sans Flex is variable); each text style picks its own axes from the design language. */
 private fun family(f: Face, weightBoost: Int = 0): FontFamily {
     val w = (f.weight + weightBoost).coerceIn(100, 1000)
     return FontFamily(
         Font(
-            R.font.roboto_flex,
+            R.font.google_sans_flex,
             FontWeight(w),
             variationSettings = FontVariation.Settings(
                 FontVariation.weight(w),
                 FontVariation.width(f.width),
+                FontVariation.Setting("ROND", f.round),
                 FontVariation.Setting("opsz", f.opticalSize),
             ),
         )
@@ -50,7 +51,7 @@ private fun TextStyle.face(f: Face, boost: Int = 0) =
     copy(fontFamily = family(f, boost), fontWeight = FontWeight((f.weight + boost).coerceIn(100, 1000)))
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private fun robotoFlexTypography(f: TypeScale): Typography {
+private fun flexTypography(f: TypeScale): Typography {
     val t = Typography()
     val b = f.emphasisBoost
     return Typography(
@@ -121,7 +122,7 @@ fun OtsTheme(forceDark: Boolean? = null, content: @Composable () -> Unit) {
         colorScheme = colors,
         motionScheme = if (lang.expressiveMotion) MotionScheme.expressive() else MotionScheme.standard(),
         shapes = lang.shapes,
-        typography = remember(lang) { robotoFlexTypography(lang.type) },
+        typography = remember(lang) { flexTypography(lang.type) },
     ) {
         CompositionLocalProvider(LocalDesign provides lang, content = content)
     }

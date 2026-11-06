@@ -13,13 +13,16 @@ import androidx.compose.ui.unit.Dp
  * write a new DesignLanguage below and put it in [DesignLanguages.all]. OtsTheme is the only code that
  * reads it (screens get the active one from [LocalDesign]).
  *
- * The ideas (a rounder corner scale, headlines that are heavier and wider than body text, labels a
+ * The ideas (a rounder corner scale, headlines that are heavier, wider and rounder than body text, labels a
  * bit bolder, light and dark chosen separately, an optional pure black) come from how the LastWave
  * music player is styled. LastWave is GPL-3.0, so none of its code is used here, only the approach.
  */
 
-/** Roboto Flex axes for one text style: `wght` (100..1000), `wdth` (25..151, 100 is normal), `opsz`. */
-class Face(val weight: Int, val width: Float, val opticalSize: Float)
+/**
+ * Google Sans Flex axes for one text style: `wght` (weight), `wdth` (100 is normal), `ROND` (0..100, how
+ * round the letter ends are) and `opsz` (optical size, set to roughly the font size).
+ */
+class Face(val weight: Int, val width: Float, val round: Float, val opticalSize: Float)
 
 class TypeScale(
     val displayLarge: Face, val displayMedium: Face, val displaySmall: Face,
@@ -58,11 +61,11 @@ object DesignLanguages {
         heroCorner = 28.dp,
         joinCorner = 6.dp,
         type = TypeScale(
-            displayLarge = Face(740, 118f, 57f), displayMedium = Face(720, 116f, 45f), displaySmall = Face(700, 114f, 36f),
-            headlineLarge = Face(760, 116f, 32f), headlineMedium = Face(740, 114f, 28f), headlineSmall = Face(720, 112f, 24f),
-            titleLarge = Face(620, 108f, 22f), titleMedium = Face(600, 105f, 16f), titleSmall = Face(580, 104f, 14f),
-            bodyLarge = Face(420, 100f, 16f), bodyMedium = Face(420, 100f, 14f), bodySmall = Face(410, 100f, 12f),
-            labelLarge = Face(640, 104f, 14f), labelMedium = Face(620, 104f, 12f), labelSmall = Face(620, 104f, 11f),
+            displayLarge = Face(760, 122f, 42f, 57f), displayMedium = Face(740, 120f, 40f, 45f), displaySmall = Face(720, 118f, 38f, 36f),
+            headlineLarge = Face(800, 122f, 40f, 32f), headlineMedium = Face(780, 120f, 38f, 28f), headlineSmall = Face(760, 116f, 36f, 24f),
+            titleLarge = Face(640, 110f, 30f, 22f), titleMedium = Face(600, 106f, 28f, 16f), titleSmall = Face(580, 105f, 26f, 14f),
+            bodyLarge = Face(440, 102f, 18f, 16f), bodyMedium = Face(430, 102f, 18f, 15f), bodySmall = Face(420, 100f, 16f, 13f),
+            labelLarge = Face(680, 108f, 46f, 14f), labelMedium = Face(660, 108f, 44f, 12f), labelSmall = Face(660, 108f, 44f, 11f),
         ),
         expressiveMotion = true,
     )

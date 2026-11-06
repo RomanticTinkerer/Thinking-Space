@@ -61,12 +61,13 @@ Used to read text from screenshots, fully offline.
 - **tessdata_fast** `eng.traineddata` (https://github.com/tesseract-ocr/tessdata_fast), Apache-2.0. Unmodified, shipped in
   `app/src/main/assets/tessdata/`. License text: `licenses/LICENSE-tessdata_fast.txt`.
 
-## Roboto Flex — SIL Open Font License 1.1
-The app's typeface, shipped as `editor/src/main/res/font/roboto_flex.ttf` (the variable font, unmodified).
+## Google Sans Flex — SIL Open Font License 1.1
+The app's typeface, shipped as `editor/src/main/res/font/google_sans_flex.ttf` (the variable font, unmodified).
 
-- Upstream: https://github.com/TypeNetwork/Roboto-Flex, copy taken from https://github.com/google/fonts (`ofl/robotoflex`)
-- Copyright 2017 The Roboto Flex Project Authors
-- License text: `licenses/OFL-RobotoFlex.txt`
+- Upstream: https://github.com/googlefonts/googlesans-flex, copy taken from https://github.com/google/fonts (`ofl/googlesansflex`)
+- Copyright 2015 The Google Sans Flex Authors
+- License text: `licenses/OFL-GoogleSansFlex.txt`
+- The per-style weight, width, roundness and optical-size values follow how the LastWave player (GPL-3.0) tunes the same font. Only the numbers are used, no code.
 
 ## On-device AI models and runtime
 Used by the editor's Smart tab. All three files are bundled in `editor/src/main/assets/models/`, so nothing is downloaded.
