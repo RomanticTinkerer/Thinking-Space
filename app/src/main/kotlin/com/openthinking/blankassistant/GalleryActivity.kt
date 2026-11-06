@@ -31,14 +31,17 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -61,15 +64,16 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
@@ -83,10 +87,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -230,7 +235,9 @@ class GalleryActivity : ComponentActivity() {
     }
 }
 
-private enum class Filter(val label: String) { All("All"), Pinned("Pinned"), Voice("Voice notes") }
+private enum class Filter(val label: String, val icon: ImageVector) {
+    All("All", Icons.Rounded.PhotoLibrary), Pinned("Pinned", Icons.Rounded.Star), Voice("Voice notes", Icons.Rounded.Mic)
+}
 
 @Composable
 private fun GalleryScreen(
@@ -247,7 +254,6 @@ private fun GalleryScreen(
     // Long-press a card to start selecting; while anything is selected, taps toggle cards.
     var selected by remember { mutableStateOf(emptySet<Uri>()) }
     var confirmDelete by remember { mutableStateOf(false) }
-    var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(Filter.All) }
     val selecting = selected.isNotEmpty()
@@ -261,17 +267,19 @@ private fun GalleryScreen(
                 it.ocrText.contains(query.trim(), ignoreCase = true))
     }
 
-    val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    // A soft wash of the theme's colour at the top that settles into the plain surface lower down.
+    val scheme = MaterialTheme.colorScheme
+    val wash = Brush.verticalGradient(0f to scheme.primaryContainer.copy(alpha = 0.65f), 0.5f to scheme.surface, 1f to scheme.surface)
     Scaffold(
-        modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
-        containerColor = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.background(wash),
+        containerColor = Color.Transparent,
         topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text(if (selecting) "${chosen.size} selected" else "Thinking Space") },
-                subtitle = {
-                    if (!selecting && !shots.isNullOrEmpty()) {
-                        Text(if (shots.size == 1) "1 memory" else "${shots.size} memories")
-                    }
+            TopAppBar(
+                title = {
+                    Text(
+                        if (selecting) "${chosen.size} selected" else "Thinking Space",
+                        style = MaterialTheme.typography.titleLargeEmphasized,
+                    )
                 },
                 navigationIcon = {
                     if (selecting) {
@@ -293,46 +301,65 @@ private fun GalleryScreen(
                             Icon(Icons.Rounded.Delete, contentDescription = "Delete selected")
                         }
                     } else {
-                        IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
-                            Icon(Icons.Rounded.Search, contentDescription = "Search notes")
-                        }
                         FilledTonalIconButton(onClick = onSetup) {
                             Icon(Icons.Rounded.Settings, contentDescription = "Settings")
                         }
                     }
                 },
-                scrollBehavior = scroll,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
             )
         },
     ) { padding ->
         when {
             shots == null -> Unit
             shots.isEmpty() -> EmptyState(isDefault, onSetDefault, onSetup, Modifier.padding(padding))
-            else -> LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+            else -> LazyVerticalStaggeredGrid(
+                columns = StaggeredGridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     start = 20.dp,
                     end = 20.dp,
-                    top = padding.calculateTopPadding() + 8.dp,
+                    top = padding.calculateTopPadding() + 4.dp,
                     bottom = padding.calculateBottomPadding() + 32.dp,
                 ),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalItemSpacing = 14.dp,
             ) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        if (!isDefault) DefaultBanner(onSetDefault)
-                        if (searching) {
-                            OutlinedTextField(
-                                value = query,
-                                onValueChange = { query = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text("Search notes and text in screenshots") },
-                                singleLine = true,
-                                shape = CircleShape,
+                item(span = StaggeredGridItemSpan.FullLine) {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        if (!selecting) {
+                            Hero(
+                                total = shots.size,
+                                pinned = shots.count { it.pinned },
+                                voice = shots.count { it.noteUri != null },
                             )
                         }
+                        if (!isDefault) DefaultBanner(onSetDefault)
+                        TextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("Search notes and text in screenshots") },
+                            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                            trailingIcon = {
+                                if (query.isNotEmpty()) {
+                                    IconButton(onClick = { query = "" }) {
+                                        Icon(Icons.Rounded.Close, contentDescription = "Clear search")
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            shape = CircleShape,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = scheme.surfaceContainerHigh,
+                                unfocusedContainerColor = scheme.surfaceContainerHigh,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                            ),
+                        )
                         // Connected button group: the selected option morphs into a pill.
                         Row(
                             modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -347,7 +374,11 @@ private fun GalleryScreen(
                                         Filter.entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                         else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                                     },
-                                ) { Text(option.label) }
+                                ) {
+                                    Icon(option.icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(option.label)
+                                }
                             }
                         }
                         if (unscanned > 0) {
@@ -367,7 +398,7 @@ private fun GalleryScreen(
                     }
                 }
                 if (visible.isEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
+                    item(span = StaggeredGridItemSpan.FullLine) {
                         Text(
                             "Nothing matches.",
                             modifier = Modifier
@@ -378,11 +409,12 @@ private fun GalleryScreen(
                         )
                     }
                 }
-                items(visible, key = { it.uri.toString() }) { shot ->
+                itemsIndexed(visible, key = { _, shot -> shot.uri.toString() }) { index, shot ->
                     val isSelected = shot.uri in selected
                     fun toggle() { selected = if (isSelected) selected - shot.uri else selected + shot.uri }
                     ShotCard(
                         shot, loadThumb,
+                        index = index,
                         selecting = selecting,
                         selected = isSelected,
                         onClick = { if (selecting) toggle() else onOpen(shot) },
@@ -410,28 +442,121 @@ private fun GalleryScreen(
     }
 }
 
+/**
+ * The big colourful header: the memory count as a huge number on a primary-to-tertiary wash, with two
+ * soft expressive shapes behind it and small stat pills. Both colours sit at the same tone, so the
+ * "on primary" text is readable across the whole gradient.
+ */
+@Composable
+private fun Hero(total: Int, pinned: Int, voice: Int) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(40.dp))
+            .background(Brush.linearGradient(listOf(scheme.primary, scheme.tertiary))),
+    ) {
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 70.dp, y = (-70).dp)
+                .size(240.dp)
+                .clip(MaterialShapes.Cookie12Sided.toShape())
+                .background(scheme.onPrimary.copy(alpha = 0.12f)),
+        )
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = (-28).dp, y = 44.dp)
+                .size(130.dp)
+                .clip(MaterialShapes.Flower.toShape())
+                .background(scheme.onTertiary.copy(alpha = 0.16f)),
+        )
+        Column(Modifier.padding(horizontal = 26.dp, vertical = 24.dp)) {
+            Text(
+                if (total == 1) "Memory" else "Memories",
+                style = MaterialTheme.typography.titleMediumEmphasized,
+                color = scheme.onPrimary.copy(alpha = 0.85f),
+            )
+            Text(
+                "$total",
+                style = MaterialTheme.typography.displayLargeEmphasized,
+                color = scheme.onPrimary,
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatPill(Icons.Rounded.Star, "$pinned pinned")
+                StatPill(Icons.Rounded.Mic, "$voice with voice")
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatPill(icon: ImageVector, label: String) {
+    val on = MaterialTheme.colorScheme.onPrimary
+    Row(
+        Modifier
+            .clip(CircleShape)
+            .background(on.copy(alpha = 0.18f))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = on, modifier = Modifier.size(18.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, color = on)
+    }
+}
+
 @Composable
 private fun DefaultBanner(onSetDefault: () -> Unit) {
-    Card(
-        shape = MaterialTheme.shapes.extraLargeIncreased,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.extraLargeIncreased)
+            .background(Brush.linearGradient(listOf(scheme.tertiaryContainer, scheme.secondaryContainer))),
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Make this your default assistant", style = MaterialTheme.typography.titleMediumEmphasized)
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 36.dp, y = (-36).dp)
+                .size(120.dp)
+                .clip(MaterialShapes.Burst.toShape())
+                .background(scheme.onTertiaryContainer.copy(alpha = 0.10f)),
+        )
+        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                "Make this your default assistant",
+                style = MaterialTheme.typography.titleMediumEmphasized,
+                color = scheme.onTertiaryContainer,
+            )
             Text(
                 "Then holding the power button captures the screen into Thinking Space.",
                 style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onTertiaryContainer,
             )
             Button(onClick = onSetDefault, shapes = ButtonDefaults.shapes()) { Text("Set as default") }
         }
     }
 }
 
+// Cards cycle through three colour families, three heights and a few corner shapes, so the wall of
+// screenshots reads as a lively mosaic instead of a spreadsheet.
+private val cardRatios = floatArrayOf(0.72f, 0.92f, 0.82f, 0.66f)
+private val cardShapes = listOf(
+    RoundedCornerShape(36.dp),
+    RoundedCornerShape(topStart = 44.dp, topEnd = 14.dp, bottomEnd = 44.dp, bottomStart = 14.dp),
+    RoundedCornerShape(topStart = 14.dp, topEnd = 44.dp, bottomEnd = 14.dp, bottomStart = 44.dp),
+    RoundedCornerShape(28.dp),
+)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ShotCard(
     shot: Shot,
     loadThumb: suspend (Uri) -> ImageBitmap?,
+    index: Int,
     selecting: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
@@ -439,86 +564,95 @@ private fun ShotCard(
 ) {
     val thumb by produceState<ImageBitmap?>(null, shot.uri) { value = loadThumb(shot.uri) }
     val scale by animateFloatAsState(if (selected) 0.92f else 1f, label = "select")
-    val primary = MaterialTheme.colorScheme.primary
+    val scheme = MaterialTheme.colorScheme
+    val (frame, onFrame) = when (index % 3) {
+        0 -> scheme.primaryContainer to scheme.onPrimaryContainer
+        1 -> scheme.tertiaryContainer to scheme.onTertiaryContainer
+        else -> scheme.secondaryContainer to scheme.onSecondaryContainer
+    }
     Card(
-        shape = MaterialTheme.shapes.extraLargeIncreased,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        border = if (selected) BorderStroke(3.dp, primary) else null,
+        shape = cardShapes[index % cardShapes.size],
+        colors = CardDefaults.cardColors(containerColor = frame, contentColor = onFrame),
+        border = if (selected) BorderStroke(3.dp, scheme.primary) else null,
         modifier = Modifier
             .scale(scale)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(3f / 4f)
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-        ) {
-            thumb?.let {
-                Image(
-                    bitmap = it,
-                    contentDescription = if (shot.noteUri != null) "Screenshot with a voice note" else "Screenshot",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    alignment = Alignment.TopCenter,
+        Column(Modifier.padding(6.dp)) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(cardRatios[index % cardRatios.size])
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(scheme.surfaceContainerHighest),
+            ) {
+                thumb?.let {
+                    Image(
+                        bitmap = it,
+                        contentDescription = if (shot.noteUri != null) "Screenshot with a voice note" else "Screenshot",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.TopCenter,
+                    )
+                }
+                if (selected) Box(Modifier.fillMaxSize().background(scheme.primary.copy(alpha = 0.25f)))
+                if (selecting) {
+                    Icon(
+                        if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                        contentDescription = if (selected) "Selected" else "Not selected",
+                        tint = if (selected) scheme.primary else Color.White,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp)
+                            .size(26.dp)
+                            .then(if (selected) Modifier.background(Color.White, CircleShape) else Modifier),
+                    )
+                }
+                if (shot.pinned) {
+                    Icon(
+                        Icons.Rounded.Star,
+                        contentDescription = "Pinned",
+                        tint = scheme.onTertiary,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(10.dp)
+                            .clip(MaterialShapes.Cookie6Sided.toShape())
+                            .background(scheme.tertiary)
+                            .padding(7.dp)
+                            .size(16.dp),
+                    )
+                }
+                if (shot.noteUri != null) {
+                    Icon(
+                        Icons.Rounded.Mic,
+                        contentDescription = "Has a voice note",
+                        tint = scheme.onPrimary,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(10.dp)
+                            .clip(MaterialShapes.Cookie9Sided.toShape())
+                            .background(scheme.primary)
+                            .padding(9.dp)
+                            .size(18.dp),
+                    )
+                }
+            }
+            if (shot.caption.isNotBlank()) {
+                Text(
+                    shot.caption,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                 )
             }
-            if (selected) Box(Modifier.fillMaxSize().background(primary.copy(alpha = 0.25f)))
-            if (selecting) {
-                Icon(
-                    if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                    contentDescription = if (selected) "Selected" else "Not selected",
-                    tint = if (selected) primary else Color.White,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp)
-                        .size(26.dp)
-                        .then(if (selected) Modifier.background(Color.White, CircleShape) else Modifier),
-                )
-            }
-            if (shot.pinned) {
-                Icon(
-                    Icons.Rounded.Star,
-                    contentDescription = "Pinned",
-                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(10.dp)
-                        .clip(MaterialShapes.Cookie6Sided.toShape())
-                        .background(MaterialTheme.colorScheme.tertiaryContainer)
-                        .padding(6.dp)
-                        .size(16.dp),
-                )
-            }
-            if (shot.noteUri != null) {
-                Icon(
-                    Icons.Rounded.Mic,
-                    contentDescription = "Has a voice note",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(10.dp)
-                        .clip(MaterialShapes.Cookie9Sided.toShape())
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(8.dp)
-                        .size(18.dp),
-                )
-            }
-        }
-        if (shot.caption.isNotBlank()) {
-            Text(
-                shot.caption,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
         }
     }
 }
 
 @Composable
 private fun EmptyState(isDefault: Boolean, onSetDefault: () -> Unit, onSetup: () -> Unit, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -526,23 +660,35 @@ private fun EmptyState(isDefault: Boolean, onSetDefault: () -> Unit, onSetup: ()
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            Icons.Rounded.PhotoLibrary,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .clip(MaterialShapes.Cookie9Sided.toShape())
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .padding(36.dp)
-                .size(48.dp),
-        )
-        Spacer(Modifier.height(24.dp))
+        Box(contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .size(190.dp)
+                    .clip(MaterialShapes.Cookie12Sided.toShape())
+                    .background(Brush.linearGradient(listOf(scheme.primary, scheme.tertiary))),
+            )
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 18.dp, y = (-6).dp)
+                    .size(64.dp)
+                    .clip(MaterialShapes.Flower.toShape())
+                    .background(scheme.secondaryContainer),
+            )
+            Icon(
+                Icons.Rounded.PhotoLibrary,
+                contentDescription = null,
+                tint = scheme.onPrimary,
+                modifier = Modifier.size(72.dp),
+            )
+        }
+        Spacer(Modifier.height(28.dp))
         Text("No memories yet", style = MaterialTheme.typography.headlineMediumEmphasized)
         Spacer(Modifier.height(8.dp))
         Text(
             "Hold the power button on any screen, add a voice note if you like, then tap Save.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyLarge,
+            color = scheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(24.dp))
