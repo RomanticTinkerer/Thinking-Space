@@ -318,11 +318,12 @@ private fun GalleryScreen(
             shots.isEmpty() -> EmptyState(isDefault, onSetDefault, onSetup, Modifier.padding(padding))
             else -> LazyVerticalStaggeredGrid(
                 columns = StaggeredGridCells.Fixed(2),
-                modifier = Modifier.fillMaxSize(),
+                // The title bar stays put: content scrolls inside the area below it, never under it.
+                modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
                 contentPadding = PaddingValues(
                     start = 20.dp,
                     end = 20.dp,
-                    top = padding.calculateTopPadding() + 4.dp,
+                    top = 4.dp,
                     bottom = padding.calculateBottomPadding() + 32.dp,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),

@@ -14,7 +14,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+        android:theme="@style/Theme.ThinkingSpace">
 
         <!--
             Settings screen. It also declares ACTION_ASSIST, which the Android

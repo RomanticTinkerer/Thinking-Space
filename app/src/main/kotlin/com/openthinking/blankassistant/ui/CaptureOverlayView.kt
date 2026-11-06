@@ -10,23 +10,31 @@ import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Outline
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PathMeasure
 import android.graphics.RectF
+import android.graphics.SweepGradient
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
+import android.os.Build
 import android.view.Gravity
+import android.view.RoundedCorner
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.ViewOutlineProvider
 import android.view.WindowInsets
 import android.view.WindowManager
+import android.view.animation.LinearInterpolator
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.dot.gallery.R as EditorR
 import com.openthinking.blankassistant.R
 import java.util.Locale
 
@@ -35,7 +43,7 @@ import java.util.Locale
  *
  * When the screenshot arrives it is shown full-bleed (with a quick shutter flash), then zooms out
  * into a white-bordered, rounded thumbnail while a dimming scrim fades in. Below it sits a pill with
- * three actions: Edit (pencil), Record (mic) and Save.
+ * three actions: Edit (pencil), Record (mic) and Save. A thin light runs round the screen edge as it opens.
  *
  * It is a plain [View] tree with no AndroidX/Material dependency, because it lives in the
  * assistant session window rather than in an Activity.
@@ -86,12 +94,17 @@ class CaptureOverlayView(
         addView(borderView, LayoutParams(MATCH_PARENT, MATCH_PARENT))
     }
 
+    /** The thin light that runs round the real edge of the screen while the capture is up. */
+    private val edge = EdgeGlowView(context).apply { alpha = 0f }
+    private var spin: ValueAnimator? = null
+
     private val flash = View(context).apply {
         setBackgroundColor(Color.WHITE)
         alpha = 0f
     }
 
     private val message = TextView(context).apply {
+        flex(DesignLanguages.default.type.bodyLarge)
         setTextColor(context.getColor(R.color.capture_label))
         textSize = 16f
         gravity = Gravity.CENTER
@@ -100,6 +113,7 @@ class CaptureOverlayView(
     }
 
     private val statusText = TextView(context).apply {
+        flex(DesignLanguages.default.type.labelLarge)
         setTextColor(context.getColor(R.color.capture_label))
         textSize = 14f
         gravity = Gravity.CENTER
@@ -185,6 +199,7 @@ class CaptureOverlayView(
         addView(scrim, LayoutParams(MATCH_PARENT, MATCH_PARENT))
         addView(frame, LayoutParams(screenW, screenH, Gravity.TOP or Gravity.START))
         addView(flash, LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        addView(edge, LayoutParams(MATCH_PARENT, MATCH_PARENT))
         addView(deleteButton, LayoutParams(dp(DELETE_DP).toInt(), dp(DELETE_DP).toInt(), Gravity.TOP or Gravity.START))
         addView(message, LayoutParams(MATCH_PARENT, MATCH_PARENT, Gravity.CENTER))
         addView(
@@ -224,6 +239,7 @@ class CaptureOverlayView(
         deleteButton.visibility = INVISIBLE
         message.visibility = GONE
         borderView.alpha = 0f
+        stopEdge()
         scrim.alpha = 0f
         setNoteState(NoteState.NONE)
         setBusy(false)
@@ -273,6 +289,7 @@ class CaptureOverlayView(
             borderView.alpha = 1f
             scrim.alpha = SCRIM_ALPHA_FINAL
             controls.alpha = 1f
+            showEdge(animate = false)
             return
         }
 
@@ -307,6 +324,76 @@ class CaptureOverlayView(
             playTogether(listOf<Animator>(shutter, zoomOut, actionsIn))
             start()
         }
+        showEdge(animate = true)
+    }
+
+    /**
+     * Draws the edge light in around the screen border, from the bottom centre outwards, while the
+     * screenshot shrinks. Afterwards its colours drift slowly round the border until the overlay closes.
+     */
+    private fun showEdge(animate: Boolean) {
+        edge.configure(cornerRadiusPx(), edgeColors())
+        if (!animate) {
+            edge.progress = 1f
+            edge.alpha = 1f
+            return
+        }
+        edge.progress = 0f
+        ObjectAnimator.ofFloat(edge, ALPHA, 0f, 1f).setDuration(220).start()
+        ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 720
+            startDelay = 40
+            interpolator = PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
+            addUpdateListener { edge.progress = it.animatedValue as Float }
+            start()
+        }
+        spin = ValueAnimator.ofFloat(0f, 360f).apply {
+            duration = 6000
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { edge.spin = it.animatedValue as Float }
+            start()
+        }
+    }
+
+    private fun stopEdge() {
+        spin?.cancel()
+        spin = null
+        edge.alpha = 0f
+        edge.progress = 0f
+    }
+
+    override fun onDetachedFromWindow() {
+        stopEdge()
+        super.onDetachedFromWindow()
+    }
+
+    /** The phone's real screen corner radius when Android reports it (12+), otherwise a typical one. */
+    private fun cornerRadiusPx(): Float {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val insets = rootWindowInsets
+            val radii = listOf(
+                RoundedCorner.POSITION_TOP_LEFT, RoundedCorner.POSITION_TOP_RIGHT,
+                RoundedCorner.POSITION_BOTTOM_LEFT, RoundedCorner.POSITION_BOTTOM_RIGHT,
+            ).mapNotNull { insets?.getRoundedCorner(it)?.radius }
+            if (radii.isNotEmpty()) return radii.average().toFloat()
+        }
+        return dp(28f)
+    }
+
+    /** Wallpaper accents on Android 12+, a soft blue, violet and pink on older versions. */
+    private fun edgeColors(): IntArray {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val a = context.getColor(android.R.color.system_accent1_300)
+            return intArrayOf(
+                a,
+                context.getColor(android.R.color.system_accent3_300),
+                context.getColor(android.R.color.system_accent2_200),
+                context.getColor(android.R.color.system_accent1_200),
+                a,
+            )
+        }
+        return intArrayOf(0xFF8AB4F8.toInt(), 0xFFC58AF9.toInt(), 0xFFF28B82.toInt(), 0xFF8AB4F8.toInt())
     }
 
     /** No screenshot could be taken (setting off, secure screen...): explain, tap anywhere to close. */
@@ -357,6 +444,13 @@ class CaptureOverlayView(
         resetButton.isEnabled = !busy
     }
 
+    /** Google Sans Flex with the design language's axes for this text style. */
+    private fun TextView.flex(face: Face) {
+        typeface = resources.getFont(EditorR.font.google_sans_flex)
+        fontVariationSettings =
+            "'wght' ${face.weight}, 'wdth' ${face.width}, 'ROND' ${face.round}, 'opsz' ${face.opticalSize}"
+    }
+
     // --- Geometry ----------------------------------------------------------------------------
 
     private fun controlsReservePx(): Float = dp(CONTROLS_RESERVE_DP) + bottomInset
@@ -381,6 +475,89 @@ class CaptureOverlayView(
     }
 
     // --- Parts -------------------------------------------------------------------------------
+
+    /**
+     * A 4 px line (pixels, not dp, so it stays hairline on any screen) along the screen border with a
+     * faint halo. [progress] 0..1 grows it from the bottom centre both ways round to the top;
+     * [spin] turns the gradient.
+     */
+    private class EdgeGlowView(context: Context) : View(context) {
+        private val core = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = CORE_PX
+            strokeCap = Paint.Cap.ROUND
+        }
+        private val halo = Paint(core).apply {
+            strokeWidth = CORE_PX * 2.5f
+            alpha = 70
+        }
+        private val path = Path()
+        private val drawn = Path()
+        private val measure = PathMeasure()
+        private val turn = Matrix()
+        private var gradient: SweepGradient? = null
+        private var radius = 0f
+        private var colors = intArrayOf(Color.WHITE, Color.WHITE)
+
+        var progress = 0f
+            set(value) { field = value; invalidate() }
+        var spin = 0f
+            set(value) { field = value; invalidate() }
+
+        fun configure(cornerRadiusPx: Float, colors: IntArray) {
+            radius = cornerRadiusPx
+            this.colors = colors
+            rebuild()
+        }
+
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = rebuild()
+
+        private fun rebuild() {
+            if (width == 0 || height == 0) return
+            val inset = CORE_PX / 2f
+            val l = inset
+            val t = inset
+            val r = width - inset
+            val b = height - inset
+            val rad = radius.coerceIn(1f, minOf(r - l, b - t) / 2f)
+            val cx = width / 2f
+            // One closed loop that starts and ends at the bottom centre.
+            path.reset()
+            path.moveTo(cx, b)
+            path.lineTo(l + rad, b)
+            path.arcTo(RectF(l, b - 2 * rad, l + 2 * rad, b), 90f, 90f)
+            path.lineTo(l, t + rad)
+            path.arcTo(RectF(l, t, l + 2 * rad, t + 2 * rad), 180f, 90f)
+            path.lineTo(r - rad, t)
+            path.arcTo(RectF(r - 2 * rad, t, r, t + 2 * rad), 270f, 90f)
+            path.lineTo(r, b - rad)
+            path.arcTo(RectF(r - 2 * rad, b - 2 * rad, r, b), 0f, 90f)
+            path.lineTo(cx, b)
+            measure.setPath(path, false)
+            gradient = SweepGradient(cx, height / 2f, colors, null).also {
+                core.shader = it
+                halo.shader = it
+            }
+            invalidate()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            val sweep = gradient ?: return
+            val half = measure.length / 2f * progress
+            if (half <= 0f) return
+            turn.setRotate(spin, width / 2f, height / 2f)
+            sweep.setLocalMatrix(turn)
+            drawn.reset()
+            measure.getSegment(0f, half, drawn, true)
+            measure.getSegment(measure.length - half, measure.length, drawn, true)
+            canvas.drawPath(drawn, halo)
+            canvas.drawPath(drawn, core)
+        }
+
+        private companion object {
+            const val CORE_PX = 4f
+        }
+    }
 
     /** Draws the white border inside the frame's bounds (so it scales down with the frame). */
     private class BorderView(context: Context) : View(context) {
@@ -471,6 +648,7 @@ class CaptureOverlayView(
             val circleSize = dp(56f).toInt()
             addView(circle, LayoutParams(circleSize, circleSize))
 
+            labelView.flex(DesignLanguages.default.type.labelMedium)
             labelView.setTextColor(context.getColor(R.color.capture_label))
             labelView.textSize = 12f
             labelView.gravity = Gravity.CENTER

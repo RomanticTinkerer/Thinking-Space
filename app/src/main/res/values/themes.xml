@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Every screen draws its own title in Compose, so the system action bar (which showed the app
+         name a second time, above the content) is switched off. -->
+    <style name="Theme.ThinkingSpace" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>
