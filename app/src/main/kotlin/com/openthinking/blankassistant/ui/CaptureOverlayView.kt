@@ -385,7 +385,7 @@ class CaptureOverlayView(
      * screenshot shrinks. Afterwards its colours drift slowly round the border until the overlay closes.
      */
     private fun showEdge(animate: Boolean) {
-        edge.configure(cornerRadiusPx(), edgeColors())
+        edge.configure(cornerRadiusPx(), edgeColors(), edgeThicknessPx())
         if (!animate) {
             edge.progress = 1f
             edge.alpha = 1f
@@ -420,6 +420,13 @@ class CaptureOverlayView(
         stopEdge()
         super.onDetachedFromWindow()
     }
+
+    /**
+     * Edge light thickness in pixels, scaled to the screen so it reads the same on every phone: 4 px on a
+     * 720-wide screen (HD+), 6 px on 1080 (FHD+), 8 px on 1440 (QHD+). The physical bezel, curved edge and
+     * corner mask eat the outermost pixels, so the line is also drawn a little in from the very edge.
+     */
+    private fun edgeThicknessPx(): Float = (minOf(screenW, screenH) / 720f * 4f).coerceIn(4f, 10f)
 
     /** The phone's real screen corner radius when Android reports it (12+), otherwise a typical one. */
     private fun cornerRadiusPx(): Float {
@@ -530,20 +537,17 @@ class CaptureOverlayView(
     // --- Parts -------------------------------------------------------------------------------
 
     /**
-     * A 4 px line (pixels, not dp, so it stays hairline on any screen) along the screen border with a
-     * faint halo. [progress] 0..1 grows it from the bottom centre both ways round to the top;
-     * [spin] turns the gradient.
+     * A light along the screen border with a faint halo; its thickness is in pixels (see
+     * [edgeThicknessPx]). [progress] 0..1 grows it from the bottom centre both ways round to the top and
+     * thickens it as it goes, so it morphs in rather than appearing at full weight; [spin] turns the gradient.
      */
     private class EdgeGlowView(context: Context) : View(context) {
         private val core = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = CORE_PX
             strokeCap = Paint.Cap.ROUND
         }
-        private val halo = Paint(core).apply {
-            strokeWidth = CORE_PX * 2.5f
-            alpha = 70
-        }
+        private val halo = Paint(core).apply { alpha = 70 }
+        private var thickness = 4f
         private val path = Path()
         private val drawn = Path()
         private val measure = PathMeasure()
@@ -557,9 +561,10 @@ class CaptureOverlayView(
         var spin = 0f
             set(value) { field = value; invalidate() }
 
-        fun configure(cornerRadiusPx: Float, colors: IntArray) {
+        fun configure(cornerRadiusPx: Float, colors: IntArray, thicknessPx: Float) {
             radius = cornerRadiusPx
             this.colors = colors
+            thickness = thicknessPx
             rebuild()
         }
 
@@ -567,12 +572,14 @@ class CaptureOverlayView(
 
         private fun rebuild() {
             if (width == 0 || height == 0) return
-            val inset = CORE_PX / 2f
+            // The line's centre sits one full thickness in from the screen edge, so the bezel and the curved
+            // glass at the very edge never cut into it.
+            val inset = thickness
             val l = inset
             val t = inset
             val r = width - inset
             val b = height - inset
-            val rad = radius.coerceIn(1f, minOf(r - l, b - t) / 2f)
+            val rad = (radius - inset).coerceIn(1f, minOf(r - l, b - t) / 2f)
             val cx = width / 2f
             // One closed loop that starts and ends at the bottom centre.
             path.reset()
@@ -598,6 +605,9 @@ class CaptureOverlayView(
             val sweep = gradient ?: return
             val half = measure.length / 2f * progress
             if (half <= 0f) return
+            val weight = 0.35f + 0.65f * progress
+            core.strokeWidth = thickness * weight
+            halo.strokeWidth = thickness * 2.5f * weight
             turn.setRotate(spin, width / 2f, height / 2f)
             sweep.setLocalMatrix(turn)
             drawn.reset()
@@ -605,10 +615,6 @@ class CaptureOverlayView(
             measure.getSegment(measure.length - half, measure.length, drawn, true)
             canvas.drawPath(drawn, halo)
             canvas.drawPath(drawn, core)
-        }
-
-        private companion object {
-            const val CORE_PX = 4f
         }
     }
 
