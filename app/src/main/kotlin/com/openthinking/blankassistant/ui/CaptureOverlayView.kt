@@ -28,7 +28,9 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.ViewOutlineProvider
 import android.view.WindowInsets
 import android.view.WindowManager
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.LinearInterpolator
+import android.view.animation.OvershootInterpolator
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -239,6 +241,15 @@ class CaptureOverlayView(
         deleteButton.visibility = INVISIBLE
         message.visibility = GONE
         borderView.alpha = 0f
+        controls.scaleX = 1f
+        controls.scaleY = 1f
+        deleteButton.scaleX = 1f
+        deleteButton.scaleY = 1f
+        for (button in listOf(editButton, recordButton, saveButton)) {
+            button.alpha = 1f
+            button.scaleX = 1f
+            button.scaleY = 1f
+        }
         stopEdge()
         scrim.alpha = 0f
         setNoteState(NoteState.NONE)
@@ -293,35 +304,77 @@ class CaptureOverlayView(
             return
         }
 
-        val emphasizedDecelerate = PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
+        // One slow, smooth curve drives the whole morph, so the scale, position, corner radius and
+        // backdrop move as a single thing instead of separate effects.
+        val glide = PathInterpolator(0.2f, 0f, 0f, 1f)
+        val fromRadius = cornerRadiusPx()
+        val toRadius = frameCornerRadius
+        frameCornerRadius = fromRadius
+        val borderStroke = dp(BORDER_DP) / scale
 
-        val shutter = ObjectAnimator.ofFloat(flash, ALPHA, 0.85f, 0f).setDuration(170)
+        val shutter = ObjectAnimator.ofFloat(flash, ALPHA, 0.5f, 0f).setDuration(140)
 
-        val zoomOut = AnimatorSet().apply {
-            playTogether(
-                ObjectAnimator.ofFloat(frame, SCALE_X, 1f, scale),
-                ObjectAnimator.ofFloat(frame, SCALE_Y, 1f, scale),
-                ObjectAnimator.ofFloat(frame, TRANSLATION_Y, 0f, translationY),
-                ObjectAnimator.ofFloat(borderView, ALPHA, 0f, 1f).apply { startDelay = 60 },
-                ObjectAnimator.ofFloat(scrim, ALPHA, scrim.alpha, SCRIM_ALPHA_FINAL),
-            )
-            duration = 440
-            interpolator = emphasizedDecelerate
+        // The backdrop goes fully opaque quickly: nothing of the real screen may show around the shrinking frame.
+        val backdrop = ObjectAnimator.ofFloat(scrim, ALPHA, scrim.alpha, SCRIM_ALPHA_FINAL).apply {
+            duration = 200
+            interpolator = LinearInterpolator()
         }
 
+        val morph = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = MORPH_MS
+            interpolator = glide
+            addUpdateListener {
+                val t = it.animatedValue as Float
+                val s = 1f + (scale - 1f) * t
+                frame.scaleX = s
+                frame.scaleY = s
+                frame.translationY = translationY * t
+                // The screen's own rounded corners ease into the thumbnail's corners.
+                frameCornerRadius = fromRadius + (toRadius - fromRadius) * t
+                frame.invalidateOutline()
+                borderView.configure(borderStroke, frameCornerRadius)
+                borderView.alpha = ((t - 0.35f) / 0.65f).coerceIn(0f, 1f)
+            }
+        }
+
+        // Everything else just appears once the frame has mostly settled: the pill fades up and grows
+        // a little, then its buttons pop in one after another.
+        val appearAt = (MORPH_MS * 0.45f).toLong()
+        val pop = OvershootInterpolator(1.6f)
         val actionsIn = AnimatorSet().apply {
-            playTogether(
-                ObjectAnimator.ofFloat(controls, ALPHA, 0f, 1f),
-                ObjectAnimator.ofFloat(deleteButton, ALPHA, 0f, 1f),
-                ObjectAnimator.ofFloat(controls, TRANSLATION_Y, dp(28f), 0f),
+            val pieces = mutableListOf<Animator>(
+                ObjectAnimator.ofFloat(controls, ALPHA, 0f, 1f).setDuration(240),
+                ObjectAnimator.ofFloat(controls, SCALE_X, 0.9f, 1f).setDuration(420),
+                ObjectAnimator.ofFloat(controls, SCALE_Y, 0.9f, 1f).setDuration(420),
+                ObjectAnimator.ofFloat(controls, TRANSLATION_Y, dp(24f), 0f).setDuration(420),
+                ObjectAnimator.ofFloat(deleteButton, ALPHA, 0f, 1f).setDuration(240).apply { startDelay = 140 },
+                ObjectAnimator.ofFloat(deleteButton, SCALE_X, 0.5f, 1f).setDuration(380).apply { startDelay = 140; interpolator = pop },
+                ObjectAnimator.ofFloat(deleteButton, SCALE_Y, 0.5f, 1f).setDuration(380).apply { startDelay = 140; interpolator = pop },
             )
-            duration = 260
-            startDelay = 220
-            interpolator = emphasizedDecelerate
+            listOf(editButton, recordButton, saveButton).forEachIndexed { i, button ->
+                button.alpha = 0f
+                button.scaleX = 0.5f
+                button.scaleY = 0.5f
+                val delay = 120L + i * 70L
+                pieces += ObjectAnimator.ofFloat(button, ALPHA, 0f, 1f).setDuration(200).apply { startDelay = delay }
+                pieces += ObjectAnimator.ofFloat(button, SCALE_X, 0.5f, 1f).setDuration(420).apply { startDelay = delay; interpolator = pop }
+                pieces += ObjectAnimator.ofFloat(button, SCALE_Y, 0.5f, 1f).setDuration(420).apply { startDelay = delay; interpolator = pop }
+            }
+            // Pieces without their own curve (the pop-ins keep their overshoot) glide like the morph.
+            pieces.forEach { p ->
+                if (p is ValueAnimator && p.interpolator is AccelerateDecelerateInterpolator) p.interpolator = glide
+            }
+            playTogether(pieces)
+            startDelay = appearAt
         }
+
+        controls.scaleX = 0.9f
+        controls.scaleY = 0.9f
+        deleteButton.scaleX = 0.5f
+        deleteButton.scaleY = 0.5f
 
         AnimatorSet().apply {
-            playTogether(listOf<Animator>(shutter, zoomOut, actionsIn))
+            playTogether(listOf<Animator>(shutter, backdrop, morph, actionsIn))
             start()
         }
         showEdge(animate = true)
@@ -401,7 +454,7 @@ class CaptureOverlayView(
         if (shown) return
         message.setText(R.string.msg_screenshot_unavailable)
         message.visibility = VISIBLE
-        scrim.alpha = SCRIM_ALPHA_FINAL
+        scrim.alpha = SCRIM_ALPHA_MESSAGE
     }
 
     fun setNoteState(state: NoteState, durationMs: Long = 0L) {
@@ -678,7 +731,9 @@ class CaptureOverlayView(
         const val CONTROLS_RESERVE_DP = 176f
         const val MAX_SCALE = 0.66f
         const val SCRIM_ALPHA_WAITING = 0.25f
-        const val SCRIM_ALPHA_FINAL = 0.72f
+        const val SCRIM_ALPHA_FINAL = 1f // opaque: the real screen must not show behind the thumbnail
+        const val SCRIM_ALPHA_MESSAGE = 0.72f
+        const val MORPH_MS = 900L
         const val MAX_AMPLITUDE = 32767f
     }
 }
