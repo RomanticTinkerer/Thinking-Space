@@ -5,6 +5,15 @@
     <style name="Theme.ThinkingSpace" parent="@android:style/Theme.DeviceDefault.DayNight">
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
+        <item name="android:windowAnimationStyle">@style/Animation.ThinkingSpace</item>
+    </style>
+
+    <!-- Screens rise in over the one behind, which dips back; closing reverses it. -->
+    <style name="Animation.ThinkingSpace" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/ts_enter</item>
+        <item name="android:activityOpenExitAnimation">@anim/ts_behind</item>
+        <item name="android:activityCloseEnterAnimation">@anim/ts_front</item>
+        <item name="android:activityCloseExitAnimation">@anim/ts_leave</item>
     </style>
 
     <!-- Share target: no screen of its own, just a toast. -->
