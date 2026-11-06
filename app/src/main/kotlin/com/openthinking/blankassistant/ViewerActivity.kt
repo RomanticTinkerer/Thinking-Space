@@ -3,6 +3,19 @@
 package com.openthinking.blankassistant
 
 import android.Manifest
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -81,6 +94,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -316,12 +330,18 @@ private fun ViewerScreen(
                 shape = MaterialTheme.shapes.extraLargeIncreased,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
+                val show by animateFloatAsState(if (image != null) 1f else 0f, tween(400), label = "image")
                 image?.let {
                     Image(
                         bitmap = it,
                         contentDescription = "Screenshot",
                         modifier = Modifier
                             .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = show
+                                scaleX = 0.94f + 0.06f * show
+                                scaleY = 0.94f + 0.06f * show
+                            }
                             .padding(12.dp),
                         contentScale = ContentScale.Fit,
                     )
@@ -342,27 +362,33 @@ private fun ViewerScreen(
             }
             if (hasNote) NoteCard(player)
             // Floating toolbar: the main actions, with Edit as the lifted primary one.
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                HorizontalFloatingToolbar(
-                    expanded = true,
-                    colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
-                    floatingActionButton = {
-                        FloatingToolbarDefaults.VibrantFloatingActionButton(onClick = onEdit) {
-                            Icon(Icons.Rounded.Edit, contentDescription = "Edit")
+            // Starting "hidden" with a "visible" target plays the entrance on the first frame and keeps the layout steady.
+            val toolbarIn = remember { MutableTransitionState(false).apply { targetState = true } }
+            AnimatedVisibility(toolbarIn, enter = slideInVertically(tween(450)) { it } + fadeIn(tween(450))) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    HorizontalFloatingToolbar(
+                        expanded = true,
+                        colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
+                        floatingActionButton = {
+                            FloatingToolbarDefaults.VibrantFloatingActionButton(onClick = onEdit) {
+                                Icon(Icons.Rounded.Edit, contentDescription = "Edit")
+                            }
+                        },
+                    ) {
+                        IconButton(onClick = onPin) {
+                            AnimatedContent(pinned, transitionSpec = { (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut()) }, label = "pin") { isPinned ->
+                                Icon(
+                                    if (isPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                    contentDescription = if (isPinned) "Unpin" else "Pin",
+                                )
+                            }
                         }
-                    },
-                ) {
-                    IconButton(onClick = onPin) {
-                        Icon(
-                            if (pinned) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                            contentDescription = if (pinned) "Unpin" else "Pin",
-                        )
+                        IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, contentDescription = "Share") }
+                        IconButton(onClick = { showText = true; onReadText(false) }) {
+                            Icon(Icons.Rounded.TextFields, contentDescription = "Text in image")
+                        }
+                        IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, contentDescription = "Delete") }
                     }
-                    IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, contentDescription = "Share") }
-                    IconButton(onClick = { showText = true; onReadText(false) }) {
-                        Icon(Icons.Rounded.TextFields, contentDescription = "Text in image")
-                    }
-                    IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, contentDescription = "Delete") }
                 }
             }
         }
@@ -431,7 +457,6 @@ private fun TextSheet(text: String?, busy: Boolean, onReadAgain: () -> Unit, onD
 /** Shown when the text in the screenshot holds an event. One event opens the calendar straight away, several ask which. */
 @Composable
 private fun CalendarChip(events: List<CalendarEvent>) {
-    if (events.isEmpty()) return
     val context = LocalContext.current
     var open by remember { mutableStateOf(false) }
     fun add(e: CalendarEvent) {
@@ -441,30 +466,33 @@ private fun CalendarChip(events: List<CalendarEvent>) {
             Toast.makeText(context, "No calendar app found", Toast.LENGTH_SHORT).show()
         }
     }
-    Box {
-        AssistChip(
-            onClick = { if (events.size == 1) add(events[0]) else open = true },
-            leadingIcon = { Icon(Icons.Rounded.Event, contentDescription = null) },
-            label = { Text("Add to calendar") },
-        )
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            events.forEach { e ->
-                // All-day events are stored as UTC midnights, so they are shown in UTC too.
-                val flags = DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_ALL or
-                    if (e.allDay) DateUtils.FORMAT_UTC else DateUtils.FORMAT_SHOW_TIME
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(e.title)
-                            Text(
-                                DateUtils.formatDateTime(context, e.start, flags),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    },
-                    onClick = { open = false; add(e) },
-                )
+    // Slides in once the text has been read and an event turned up.
+    AnimatedVisibility(events.isNotEmpty(), enter = expandHorizontally() + fadeIn(), exit = shrinkHorizontally() + fadeOut()) {
+        Box {
+            AssistChip(
+                onClick = { if (events.size == 1) add(events[0]) else open = true },
+                leadingIcon = { Icon(Icons.Rounded.Event, contentDescription = null) },
+                label = { Text("Add to calendar") },
+            )
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                events.forEach { e ->
+                    // All-day events are stored as UTC midnights, so they are shown in UTC too.
+                    val flags = DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_ALL or
+                        if (e.allDay) DateUtils.FORMAT_UTC else DateUtils.FORMAT_SHOW_TIME
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(e.title)
+                                Text(
+                                    DateUtils.formatDateTime(context, e.start, flags),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                        onClick = { open = false; add(e) },
+                    )
+                }
             }
         }
     }
