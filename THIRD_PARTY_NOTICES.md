@@ -78,6 +78,15 @@ Used by the editor's Smart tab. All three files are bundled in `editor/src/main/
 
 The Apache-2.0 text is the same as `editor/LICENSE-ReFra.txt`.
 
+## Voice note transcription
+Runs fully on the phone. The build downloads these (they are not in git) and bundles them in the APK; the app itself has no internet permission.
+
+| Component | License | Notes |
+| --- | --- | --- |
+| **sherpa-onnx** 1.13.8 (https://github.com/k2-fsa/sherpa-onnx) | Apache-2.0 | The `static-link-onnxruntime` AAR from the project's GitHub release, used as a local file dependency. It carries its own ONNX Runtime. |
+| **OpenAI Whisper base.en** (https://github.com/openai/whisper) | MIT, Copyright (c) 2022 OpenAI | int8 export by csukuangfj (https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base.en), unmodified: encoder, decoder and tokens. English speech recognition. |
+| **Silero VAD** (https://github.com/snakers4/silero-vad) | MIT, Copyright (c) 2020-present Silero Team | `silero_vad.onnx`, as published with sherpa-onnx. Splits long recordings into speech chunks. |
+
 ## Recording foreground service
 `app/.../audio/RecordingService.kt` follows the approach used by Fossify Voice Recorder
 (https://github.com/FossifyOrg/Voice-Recorder) and Dimowner/AudioRecorder: record inside a foreground

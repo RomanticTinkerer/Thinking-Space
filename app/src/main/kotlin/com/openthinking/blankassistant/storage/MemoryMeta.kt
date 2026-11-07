@@ -3,7 +3,7 @@ package com.openthinking.blankassistant.storage
 import android.content.Context
 
 /**
- * Per-screenshot extras that MediaStore has no place for: a text note, a pin, a reminder time and the OCR text.
+ * Per-screenshot extras that MediaStore has no place for: a text note, a pin, a reminder time, the OCR text and the voice note's transcript.
  * Keyed by the screenshot's base name (`Screenshot<N>`), which is unique inside the album.
  */
 class MemoryMeta(context: Context) {
@@ -43,6 +43,13 @@ class MemoryMeta(context: Context) {
     /** Forget all OCR text, so the gallery reads every screenshot again. */
     fun clearOcr() = prefs.edit().apply { prefs.all.keys.filter { it.startsWith("ocr4:") }.forEach(::remove) }.apply()
 
-    fun forget(base: String) =
-        prefs.edit().remove("cap:$base").remove("pin:$base").remove("rem:$base").remove("ocr4:$base").apply()
+    /** What the voice note says. null = not transcribed yet, "" = transcribed and silent. */
+    fun transcript(base: String): String? = prefs.getString("tr:$base", null)
+
+    fun setTranscript(base: String, text: String) = prefs.edit().putString("tr:$base", text).apply()
+
+    fun clearTranscript(base: String) = prefs.edit().remove("tr:$base").apply()
+
+    fun forget(base: String) = prefs.edit()
+        .remove("cap:$base").remove("pin:$base").remove("rem:$base").remove("ocr4:$base").remove("tr:$base").apply()
 }

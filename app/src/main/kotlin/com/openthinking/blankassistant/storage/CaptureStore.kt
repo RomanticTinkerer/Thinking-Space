@@ -44,6 +44,8 @@ object CaptureStore {
         val pinned: Boolean = false,
         /** Text read from the image by OCR. Empty until the screenshot has been scanned. */
         val ocrText: String = "",
+        /** What the voice note says (empty until it has been transcribed). */
+        val transcript: String = "",
     )
 
     private val imagesCollection: Uri

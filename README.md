@@ -27,11 +27,12 @@ Everything lands in the shared `Pictures/OpenThinking Space Screenshots` album (
 | Collections | Pinned and Voice notes filters |
 | Add to calendar | Finds dates, times and places in the text and opens your calendar app with the event filled in. A schedule gives one event per time. Plain rules, no model |
 | Reminders | "Remind me" on any screenshot (notification) |
+| Voice transcription | On-device Whisper (base.en). Voice notes are written out as text, searchable, with Copy in the viewer |
 | Share to Essential Space | "Share to Thinking Space" saves text, links, images and audio (chat voice messages too) |
 | Quick note, voice memo | "New note" and mic buttons on the home screen, plus launcher shortcuts and a Quick Settings tile (Voice memo) |
 | Share, multi-select | Share, long-press to pin or delete several |
 
-Not here yet: AI summaries and task extraction, voice transcription, OCR in languages other than English, widgets and backup. They need a model, and the aim is to add them on-device or not at all.
+Not here yet: AI summaries and task extraction, transcription in languages other than English, OCR in languages other than English, widgets and backup. They need a model, and the aim is to add them on-device or not at all.
 
 ## Build
 
@@ -39,7 +40,9 @@ Not here yet: AI summaries and task extraction, voice transcription, OCR in lang
 ./gradlew :app:installDebug
 ```
 
-After installing, open the app, accept the "set as default assistant" prompt and allow the microphone. In the assistant settings, also switch on "Use screenshot".
+The first build downloads the speech model (Whisper base.en, about 160 MB) and the sherpa-onnx library into `app/asr-model/` and `app/libs/`. Both are git-ignored, so the repo stays small, and the app itself never goes online. They are bundled in the APK (about 350 MB debug), which reads them in place. The model is loaded only while voice notes are being written out.
+
+Needs JDK 21 and the Android SDK (compileSdk 37). After installing, open the app, accept the "set as default assistant" prompt and allow the microphone. In the assistant settings, also switch on "Use screenshot".
 
 The internal package is still `com.openthinking.blankassistant`. It was kept on purpose so existing installs keep their saved screenshots (scoped storage ties files to the package).
 

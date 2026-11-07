@@ -117,6 +117,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.openthinking.blankassistant.asr.Transcriber
 import com.openthinking.blankassistant.ocr.TextReader
 import com.openthinking.blankassistant.reminder.Reminders
 import com.openthinking.blankassistant.storage.CaptureStore
@@ -140,9 +141,11 @@ class GalleryActivity : ComponentActivity() {
     private val thumbs = LruCache<Uri, ImageBitmap>(80)
     private val ocrIo = Executors.newSingleThreadExecutor()
     private val scanning = AtomicBoolean(false)
+    private val asrIo = Executors.newSingleThreadExecutor() // speech to text is slow and heavy; its own lane
     private var shots by mutableStateOf<List<Shot>?>(null)
     private var isDefault by mutableStateOf(true)
     private var unscanned by mutableIntStateOf(0)
+    private var untranscribed by mutableIntStateOf(0)
     private var noteOpen by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -157,6 +160,7 @@ class GalleryActivity : ComponentActivity() {
                 GalleryScreen(
                     shots = shots,
                     unscanned = unscanned,
+                    untranscribed = untranscribed,
                     noteOpen = noteOpen,
                     onNoteOpen = { noteOpen = it },
                     onNote = { text ->
@@ -218,11 +222,13 @@ class GalleryActivity : ComponentActivity() {
                     caption = meta.caption(it.baseName),
                     pinned = meta.pinned(it.baseName),
                     ocrText = meta.ocr(it.baseName).orEmpty(),
+                    transcript = meta.transcript(it.baseName).orEmpty(),
                 )
             }
             .sortedByDescending { it.pinned } // stable: newest first inside each group
         runOnUiThread { if (!isDestroyed) shots = list }
         scanText(list)
+        transcribeNotes(list)
     }
 
     /**
@@ -259,9 +265,43 @@ class GalleryActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Turns every voice note that has no transcript yet into text, newest first, one at a time, on the phone.
+     * The speech model is big, so it is loaded only while there is something to do. Skipped if a run is
+     * already going; the next reload picks up what is left.
+     */
+    private fun transcribeNotes(list: List<Shot>) {
+        if (!Transcriber.enabled(this)) return
+        val meta = MemoryMeta(this)
+        val todo = list.filter { it.noteUri != null && meta.transcript(it.baseName) == null }
+        if (todo.isEmpty() || !Transcriber.running.compareAndSet(false, true)) return
+        runOnUiThread { untranscribed = todo.size }
+        asrIo.execute {
+            try {
+                Transcriber.open(this)?.use { transcriber ->
+                    todo.forEachIndexed { i, shot ->
+                        if (isDestroyed) return@use
+                        // ponytail: audio that cannot be decoded is stored as silent so it is not retried on every
+                        // launch (and the model reloaded each time); the viewer has a Retry button.
+                        val text = runCatching { transcriber.transcribe(this, shot.noteUri!!) }.getOrNull().orEmpty()
+                        meta.setTranscript(shot.baseName, text)
+                        runOnUiThread {
+                            shots = shots?.map { if (it.baseName == shot.baseName) it.copy(transcript = text) else it }
+                            untranscribed = todo.size - i - 1
+                        }
+                    }
+                }
+            } finally {
+                Transcriber.running.set(false)
+                runOnUiThread { untranscribed = 0 }
+            }
+        }
+    }
+
     override fun onDestroy() {
         io.shutdownNow()
         ocrIo.shutdownNow()
+        asrIo.shutdownNow()
         super.onDestroy()
     }
 
@@ -281,6 +321,7 @@ private enum class Filter(val label: String, val icon: ImageVector) {
 private fun GalleryScreen(
     shots: List<Shot>?,
     unscanned: Int,
+    untranscribed: Int,
     noteOpen: Boolean,
     onNoteOpen: (Boolean) -> Unit,
     onNote: (String) -> Unit,
@@ -306,7 +347,8 @@ private fun GalleryScreen(
         (filter == Filter.All || (filter == Filter.Pinned && it.pinned) || (filter == Filter.Voice && it.noteUri != null)) &&
             (query.isBlank() ||
                 it.caption.contains(query.trim(), ignoreCase = true) ||
-                it.ocrText.contains(query.trim(), ignoreCase = true))
+                it.ocrText.contains(query.trim(), ignoreCase = true) ||
+                it.transcript.contains(query.trim(), ignoreCase = true))
     }
 
     // A soft wash of the theme's colour at the top that settles into the plain surface lower down.
@@ -398,7 +440,7 @@ private fun GalleryScreen(
                             value = query,
                             onValueChange = { query = it },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("Search notes and text in screenshots") },
+                            placeholder = { Text("Search notes, text and voice notes") },
                             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                             trailingIcon = {
                                 if (query.isNotEmpty()) {
@@ -435,6 +477,20 @@ private fun GalleryScreen(
                                     Spacer(Modifier.width(8.dp))
                                     Text(option.label)
                                 }
+                            }
+                        }
+                        if (untranscribed > 0) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                LoadingIndicator(Modifier.size(36.dp))
+                                Text(
+                                    "Writing out $untranscribed voice note${if (untranscribed == 1) "" else "s"}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                         // Keeps the last count while the row slides away, so it never says "0 screenshots".
