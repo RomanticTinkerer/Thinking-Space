@@ -28,6 +28,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
+import com.openthinking.blankassistant.storage.AppSettings
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Description
@@ -135,6 +137,8 @@ private fun SettingsScreen(
     var mode by remember { mutableStateOf(DesignSettings.read(prefs).mode) }
     var pureBlack by remember { mutableStateOf(prefs.getBoolean(DesignConfig.KEY_PURE_BLACK, DesignConfig.DEFAULT_PURE_BLACK)) }
     var rescanned by remember { mutableStateOf(false) }
+    var groupByApp by remember { mutableStateOf(AppSettings.groupByApp(context)) }
+    var hideStatusBar by remember { mutableStateOf(AppSettings.hideStatusBar(context)) }
     var transcribe by remember { mutableStateOf(prefs.getBoolean(Transcriber.PREF_KEY, true)) }
     val canDynamic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
@@ -216,6 +220,27 @@ private fun SettingsScreen(
                                     enabled = canDynamic,
                                 )
                             },
+                        )
+                    },
+                )
+            }
+            item {
+                Section(
+                    "Screenshots",
+                    {
+                        SettingRow(
+                            Icons.Rounded.Apps, "Tab for each app",
+                            "Adds a tab in the gallery for every app you took a screenshot in.",
+                            onClick = { groupByApp = !groupByApp; prefs.edit().putBoolean(AppSettings.GROUP_BY_APP, groupByApp).apply() },
+                            trailing = { Switch(checked = groupByApp, onCheckedChange = null) },
+                        )
+                    },
+                    {
+                        SettingRow(
+                            Icons.Rounded.Info, "Hide the status bar",
+                            "Saved screenshots are cut below the clock and battery.",
+                            onClick = { hideStatusBar = !hideStatusBar; prefs.edit().putBoolean(AppSettings.HIDE_STATUS_BAR, hideStatusBar).apply() },
+                            trailing = { Switch(checked = hideStatusBar, onCheckedChange = null) },
                         )
                     },
                 )

@@ -44,6 +44,11 @@ class MemoryMeta(context: Context) {
     fun clearOcr() = prefs.edit().apply { prefs.all.keys.filter { it.startsWith("ocr5:") }.forEach(::remove) }.apply()
 
     /** What the voice note says. null = not transcribed yet, "" = transcribed and silent. */
+    /** Package name of the app the screenshot was taken in ("" when unknown). */
+    fun app(base: String): String = prefs.getString("app:$base", "").orEmpty()
+
+    fun setApp(base: String, pkg: String) = prefs.edit().putString("app:$base", pkg).apply()
+
     fun transcript(base: String): String? = prefs.getString("tr:$base", null)
 
     fun setTranscript(base: String, text: String) = prefs.edit().putString("tr:$base", text).apply()
@@ -51,5 +56,5 @@ class MemoryMeta(context: Context) {
     fun clearTranscript(base: String) = prefs.edit().remove("tr:$base").apply()
 
     fun forget(base: String) = prefs.edit()
-        .remove("cap:$base").remove("pin:$base").remove("rem:$base").remove("ocr5:$base").remove("tr:$base").apply()
+        .remove("cap:$base").remove("pin:$base").remove("rem:$base").remove("ocr5:$base").remove("app:$base").remove("tr:$base").apply()
 }

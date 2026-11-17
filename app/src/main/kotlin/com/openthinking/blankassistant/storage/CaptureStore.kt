@@ -46,6 +46,9 @@ object CaptureStore {
         val ocrText: String = "",
         /** What the voice note says (empty until it has been transcribed). */
         val transcript: String = "",
+        /** Package and name of the app it was taken in; empty if unknown. */
+        val app: String = "",
+        val appLabel: String = "",
     )
 
     private val imagesCollection: Uri
@@ -197,6 +200,11 @@ object CaptureStore {
     fun displayName(context: Context, uri: Uri): String? = context.contentResolver.query(
         uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null,
     )?.use { if (it.moveToFirst()) it.getString(0) else null }
+
+    /** Deletes just the voice note; the screenshot stays. */
+    fun deleteNote(context: Context, noteUri: Uri) {
+        context.contentResolver.delete(noteUri, null, null)
+    }
 
     /** Deletes the screenshot and its note. */
     fun delete(context: Context, imageUri: Uri) {

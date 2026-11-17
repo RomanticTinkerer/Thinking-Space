@@ -95,6 +95,17 @@ import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.toShape
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.ViewQuilt
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.ViewModule
+import androidx.compose.material.icons.rounded.ViewList
+import androidx.compose.material.icons.rounded.ViewAgenda
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.openthinking.blankassistant.storage.AppSettings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -147,10 +158,13 @@ class GalleryActivity : ComponentActivity() {
     private var unscanned by mutableIntStateOf(0)
     private var untranscribed by mutableIntStateOf(0)
     private var noteOpen by mutableStateOf(false)
+    private var groupByApp by mutableStateOf(true)
+    private var layout by mutableStateOf(GalleryLayout.Staggered)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        layout = GalleryLayout.entries.firstOrNull { it.name == AppSettings.prefs(this).getString(AppSettings.LAYOUT, null) } ?: GalleryLayout.Staggered
         noteOpen = intent.getBooleanExtra(EXTRA_NEW_NOTE, false) || intent.getStringExtra(EXTRA_NEW_NOTE) == "true" // the "New note" launcher shortcut
         setContent {
             OtsTheme {
@@ -162,6 +176,12 @@ class GalleryActivity : ComponentActivity() {
                     unscanned = unscanned,
                     untranscribed = untranscribed,
                     noteOpen = noteOpen,
+                    layout = layout,
+                    onLayout = {
+                        layout = it
+                        AppSettings.prefs(this).edit().putString(AppSettings.LAYOUT, it.name).apply()
+                    },
+                    groupByApp = groupByApp,
                     onNoteOpen = { noteOpen = it },
                     onNote = { text ->
                         io.execute {
@@ -210,22 +230,30 @@ class GalleryActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         isDefault = isDefaultAssistant(this)
+        groupByApp = AppSettings.groupByApp(this)
         thumbs.evictAll()
         io.execute(::reload)
     }
 
     private fun reload() {
         val meta = MemoryMeta(this)
-        val list = CaptureStore.listShots(this)
+        val labels = HashMap<String, String>()
+        fun label(pkg: String) = labels.getOrPut(pkg) {
+            runCatching { packageManager.getApplicationInfo(pkg, 0).loadLabel(packageManager).toString() }
+                .getOrDefault(pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() })
+        }
+        val list = CaptureStore.listShots(this) // newest first; pinned ones get their own tab, they do not jump to the top
             .map {
+                val app = meta.app(it.baseName)
                 it.copy(
                     caption = meta.caption(it.baseName),
                     pinned = meta.pinned(it.baseName),
                     ocrText = meta.ocr(it.baseName).orEmpty(),
                     transcript = meta.transcript(it.baseName).orEmpty(),
+                    app = app,
+                    appLabel = if (app.isEmpty()) "" else label(app),
                 )
             }
-            .sortedByDescending { it.pinned } // stable: newest first inside each group
         runOnUiThread { if (!isDestroyed) shots = list }
         scanText(list)
         transcribeNotes(list)
@@ -313,8 +341,17 @@ class GalleryActivity : ComponentActivity() {
 
 private const val EXTRA_NEW_NOTE = "new_note"
 
-private enum class Filter(val label: String, val icon: ImageVector) {
-    All("All", Icons.Rounded.PhotoLibrary), Pinned("Pinned", Icons.Rounded.Star), Voice("Voice notes", Icons.Rounded.Mic)
+/** One tab: All, Pinned, Voice notes, and (if switched on) one per app the screenshots were taken in. */
+private class Tab(val key: String, val label: String, val icon: ImageVector)
+
+/** Six ways to lay the memories out. */
+private enum class GalleryLayout(val label: String, val icon: ImageVector) {
+    Staggered("Staggered", Icons.Rounded.ViewQuilt),
+    Grid("Grid", Icons.Rounded.GridView),
+    Compact("Compact", Icons.Rounded.ViewModule),
+    List("List", Icons.Rounded.ViewList),
+    Large("Large", Icons.Rounded.ViewAgenda),
+    Magazine("Magazine", Icons.Rounded.Dashboard),
 }
 
 @Composable
@@ -323,6 +360,9 @@ private fun GalleryScreen(
     unscanned: Int,
     untranscribed: Int,
     noteOpen: Boolean,
+    layout: GalleryLayout,
+    onLayout: (GalleryLayout) -> Unit,
+    groupByApp: Boolean,
     onNoteOpen: (Boolean) -> Unit,
     onNote: (String) -> Unit,
     onMemo: () -> Unit,
@@ -338,13 +378,28 @@ private fun GalleryScreen(
     var selected by remember { mutableStateOf(emptySet<Uri>()) }
     var confirmDelete by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var filter by remember { mutableStateOf(Filter.All) }
+    var tabKey by rememberSaveable { mutableStateOf("all") }
+    var layoutMenu by remember { mutableStateOf(false) }
+    val tabs = remember(shots, groupByApp) {
+        buildList {
+            add(Tab("all", "All", Icons.Rounded.PhotoLibrary))
+            add(Tab("pinned", "Pinned", Icons.Rounded.Star))
+            add(Tab("voice", "Voice notes", Icons.Rounded.Mic))
+            if (groupByApp) {
+                shots.orEmpty().filter { it.app.isNotEmpty() }.groupBy { it.app }.entries
+                    .sortedByDescending { it.value.size }
+                    .forEach { add(Tab("app:${it.key}", it.value.first().appLabel, Icons.Rounded.Apps)) }
+            }
+        }
+    }
+    val tab = tabs.firstOrNull { it.key == tabKey } ?: tabs.first() // an app tab that is gone falls back to All
     val selecting = selected.isNotEmpty()
     val chosen = shots.orEmpty().filter { it.uri in selected }
     BackHandler(enabled = selecting) { selected = emptySet() }
 
     val visible = shots.orEmpty().filter {
-        (filter == Filter.All || (filter == Filter.Pinned && it.pinned) || (filter == Filter.Voice && it.noteUri != null)) &&
+        (tab.key == "all" || (tab.key == "pinned" && it.pinned) || (tab.key == "voice" && it.noteUri != null) ||
+            tab.key == "app:${it.app}") &&
             (query.isBlank() ||
                 it.caption.contains(query.trim(), ignoreCase = true) ||
                 it.ocrText.contains(query.trim(), ignoreCase = true) ||
@@ -398,6 +453,21 @@ private fun GalleryScreen(
                             Icon(Icons.Rounded.Delete, contentDescription = "Delete selected")
                         }
                     } else {
+                        Box {
+                            IconButton(onClick = { layoutMenu = true }) {
+                                Icon(layout.icon, contentDescription = "Change layout")
+                            }
+                            DropdownMenu(expanded = layoutMenu, onDismissRequest = { layoutMenu = false }) {
+                                GalleryLayout.entries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option.label) },
+                                        leadingIcon = { Icon(option.icon, contentDescription = null) },
+                                        trailingIcon = { if (option == layout) Icon(Icons.Rounded.CheckCircle, contentDescription = "Current layout") },
+                                        onClick = { layoutMenu = false; onLayout(option) },
+                                    )
+                                }
+                            }
+                        }
                         FilledTonalIconButton(onClick = onSetup) {
                             Icon(Icons.Rounded.Settings, contentDescription = "Settings")
                         }
@@ -413,10 +483,29 @@ private fun GalleryScreen(
         when {
             shots == null -> Unit
             shots.isEmpty() -> EmptyState(isDefault, onSetDefault, onSetup, Modifier.padding(padding))
-            else -> LazyVerticalStaggeredGrid(
-                columns = StaggeredGridCells.Fixed(2),
-                // The title bar stays put: content scrolls inside the area below it, never under it.
-                modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
+            else -> Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+            // The tabs sit right under the title bar and stay put while the cards scroll.
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                tabs.forEach { option ->
+                    ToggleButton(checked = tab.key == option.key, onCheckedChange = { tabKey = option.key }) {
+                        Icon(option.icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(option.label, maxLines = 1)
+                    }
+                }
+            }
+            LazyVerticalStaggeredGrid(
+                columns = StaggeredGridCells.Fixed(
+                    when (layout) {
+                        GalleryLayout.Compact -> 3
+                        GalleryLayout.List, GalleryLayout.Large -> 1
+                        else -> 2
+                    },
+                ),
+                modifier = Modifier.fillMaxWidth().weight(1f),
                 contentPadding = PaddingValues(
                     start = 20.dp,
                     end = 20.dp,
@@ -458,27 +547,6 @@ private fun GalleryScreen(
                                 unfocusedIndicatorColor = Color.Transparent,
                             ),
                         )
-                        // Connected button group: the selected option morphs into a pill.
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
-                        ) {
-                            Filter.entries.forEachIndexed { i, option ->
-                                ToggleButton(
-                                    checked = filter == option,
-                                    onCheckedChange = { filter = option },
-                                    shapes = when (i) {
-                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                                        Filter.entries.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                    },
-                                ) {
-                                    Icon(option.icon, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(option.label)
-                                }
-                            }
-                        }
                         if (untranscribed > 0) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 4.dp),
@@ -524,19 +592,37 @@ private fun GalleryScreen(
                         )
                     }
                 }
-                itemsIndexed(visible, key = { _, shot -> shot.uri.toString() }) { index, shot ->
+                itemsIndexed(
+                    visible,
+                    key = { _, shot -> shot.uri.toString() },
+                    span = { index, _ -> if (layout == GalleryLayout.Magazine && index == 0) StaggeredGridItemSpan.FullLine else StaggeredGridItemSpan.SingleLane },
+                ) { index, shot ->
                     val isSelected = shot.uri in selected
                     fun toggle() { selected = if (isSelected) selected - shot.uri else selected + shot.uri }
-                    ShotCard(
-                        shot, loadThumb,
-                        index = index,
-                        selecting = selecting,
-                        selected = isSelected,
-                        onClick = { if (selecting) toggle() else onOpen(shot) },
-                        onLongClick = ::toggle,
-                        modifier = Modifier.animateItem(), // cards glide when one is deleted, pinned or filtered out
-                    )
+                    val open = { if (selecting) toggle() else onOpen(shot) }
+                    if (layout == GalleryLayout.List) {
+                        ShotRow(shot, loadThumb, selecting, isSelected, open, ::toggle, Modifier.animateItem())
+                    } else {
+                        ShotCard(
+                            shot, loadThumb,
+                            index = index,
+                            selecting = selecting,
+                            selected = isSelected,
+                            onClick = open,
+                            onLongClick = ::toggle,
+                            ratio = when (layout) {
+                                GalleryLayout.Grid -> 0.75f
+                                GalleryLayout.Compact -> 0.7f
+                                GalleryLayout.Large -> 0.8f
+                                GalleryLayout.Magazine -> if (index == 0) 1.4f else null
+                                else -> null
+                            },
+                            compact = layout == GalleryLayout.Compact,
+                            modifier = Modifier.animateItem(), // cards glide when one is deleted, pinned or filtered out
+                        )
+                    }
                 }
+            }
             }
         }
     }
@@ -704,6 +790,8 @@ private fun ShotCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
+    ratio: Float? = null,
+    compact: Boolean = false,
 ) {
     val thumb by produceState<ImageBitmap?>(null, shot.uri) { value = loadThumb(shot.uri) }
     // The first cards rise in one after another. Later ones (scrolled into view) just appear.
@@ -739,7 +827,7 @@ private fun ShotCard(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .aspectRatio(cardRatios[index % cardRatios.size])
+                    .aspectRatio(ratio ?: cardRatios[index % cardRatios.size])
                     .clip(RoundedCornerShape(28.dp))
                     .background(scheme.surfaceContainerHighest),
             ) {
@@ -798,7 +886,7 @@ private fun ShotCard(
                     )
                 }
             }
-            if (shot.caption.isNotBlank()) {
+            if (shot.caption.isNotBlank() && !compact) {
                 Text(
                     shot.caption,
                     style = MaterialTheme.typography.bodyMedium,
@@ -806,6 +894,70 @@ private fun ShotCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                 )
+            }
+        }
+    }
+}
+
+/** The List layout: a small thumbnail, then what the memory is about. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ShotRow(
+    shot: Shot,
+    loadThumb: suspend (Uri) -> ImageBitmap?,
+    selecting: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val thumb by produceState<ImageBitmap?>(null, shot.uri) { value = loadThumb(shot.uri) }
+    val scheme = MaterialTheme.colorScheme
+    Card(
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = scheme.surfaceContainerHigh),
+        border = if (selected) BorderStroke(3.dp, scheme.primary) else null,
+        modifier = modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
+    ) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(
+                Modifier
+                    .size(width = 84.dp, height = 112.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(scheme.surfaceContainerHighest),
+            ) {
+                thumb?.let {
+                    Image(
+                        bitmap = it,
+                        contentDescription = "Screenshot",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.TopCenter,
+                    )
+                }
+                if (selecting) {
+                    Icon(
+                        if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                        contentDescription = if (selected) "Selected" else "Not selected",
+                        tint = if (selected) scheme.primary else Color.White,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(22.dp),
+                    )
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    shot.caption.ifBlank { shot.ocrText.lineSequence().firstOrNull { it.isNotBlank() } ?: "Screenshot" },
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (shot.appLabel.isNotEmpty()) {
+                    Text(shot.appLabel, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (shot.pinned) Icon(Icons.Rounded.Star, contentDescription = "Pinned", tint = scheme.tertiary, modifier = Modifier.size(18.dp))
+                    if (shot.noteUri != null) Icon(Icons.Rounded.Mic, contentDescription = "Has a voice note", tint = scheme.primary, modifier = Modifier.size(18.dp))
+                }
             }
         }
     }
