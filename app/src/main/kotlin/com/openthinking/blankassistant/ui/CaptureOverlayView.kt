@@ -573,6 +573,7 @@ class CaptureOverlayView(
 
     override fun onDetachedFromWindow() {
         stopAnimations()
+        removeCallbacks(hideEventRunnable)
         flash.alpha = 0f
         super.onDetachedFromWindow()
     }
@@ -648,6 +649,7 @@ class CaptureOverlayView(
     /** Slides the "event found" card in from the top ([title] null hides it). */
     fun setEvent(title: String?, whenText: String = "", canRemind: Boolean = false) {
         eventCard.animate().cancel()
+        removeCallbacks(hideEventRunnable)
         eventRemindOn = false
         refreshEventRemind()
         if (title == null) {
@@ -663,9 +665,13 @@ class CaptureOverlayView(
             eventCard.translationY = -(eventCard.height + dp(EVENT_TOP_DP) + topInset)
             eventCard.animate().translationY(0f).alpha(1f).setDuration(450).setInterpolator(OvershootInterpolator(0.9f)).start()
         }
+        postDelayed(hideEventRunnable, EVENT_SHOWN_MS) // like a notification: it leaves by itself
     }
 
+    private val hideEventRunnable = Runnable { hideEvent() }
+
     private fun hideEvent() {
+        removeCallbacks(hideEventRunnable)
         eventCard.animate().translationY(-(eventCard.height + dp(EVENT_TOP_DP) + topInset)).alpha(0f).setDuration(250)
             .withEndAction { eventCard.visibility = GONE }.start()
     }
@@ -885,6 +891,7 @@ class CaptureOverlayView(
         const val CONTROLS_RESERVE_DP = 228f // tiles, status chip, option chips and margins
         const val CHIP_DP = 40f
         const val EVENT_TOP_DP = 12f
+        const val EVENT_SHOWN_MS = 7_000L
         const val MAX_SCALE = 0.66f
         const val SCRIM_ALPHA_WAITING = 0.25f
         const val SCRIM_ALPHA_FINAL = 1f // opaque: the real screen must not show behind the thumbnail

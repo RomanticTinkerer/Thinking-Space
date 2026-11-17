@@ -96,6 +96,17 @@ import com.openthinking.blankassistant.events.AddEventActivity
 import com.openthinking.blankassistant.events.ReminderOption
 import com.openthinking.blankassistant.events.reminderOptions
 import com.openthinking.blankassistant.events.whenText
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -349,6 +360,11 @@ private fun ViewerScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     var showText by remember { mutableStateOf(false) }
     var showTranscript by remember { mutableStateOf(false) }
+    var zoom by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val events = remember(ocrText) { ocrText?.let(EventParser::parse).orEmpty() }
+    var promptShown by remember { mutableStateOf(false) }
+    LaunchedEffect(events.isNotEmpty()) { if (events.isNotEmpty()) promptShown = true }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
@@ -362,104 +378,119 @@ private fun ViewerScreen(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding()
-                .padding(
-                    PaddingValues(
-                        start = 20.dp,
-                        end = 20.dp,
-                        top = padding.calculateTopPadding() + 8.dp,
-                        bottom = padding.calculateBottomPadding() + 20.dp,
-                    ),
-                ),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            val context = LocalContext.current
-            val events = remember(ocrText) { ocrText?.let(EventParser::parse).orEmpty() }
-            EventPrompt(
-                events,
-                onAdd = { context.startActivity(AddEventActivity.intent(context, events)) },
-                onRemind = { e, o ->
-                    if (caption.isBlank()) onCaption(e.title) // so the alarm says what it is for
-                    onRemind(o.at)
-                },
-            )
-            Surface(
+        Box(Modifier.fillMaxSize()) {
+            Column(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLargeIncreased,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    .fillMaxSize()
+                    .imePadding()
+                    .padding(
+                        PaddingValues(
+                            start = 20.dp,
+                            end = 20.dp,
+                            top = padding.calculateTopPadding() + 8.dp,
+                            bottom = padding.calculateBottomPadding() + 20.dp,
+                        ),
+                    ),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                val show by animateFloatAsState(if (image != null) 1f else 0f, tween(400), label = "image")
-                image?.let {
-                    Image(
-                        bitmap = it,
-                        contentDescription = "Screenshot",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                alpha = show
-                                scaleX = 0.94f + 0.06f * show
-                                scaleY = 0.94f + 0.06f * show
-                            }
-                            .padding(12.dp),
-                        contentScale = ContentScale.Fit,
-                    )
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clickable(enabled = image != null) { zoom = true },
+                    shape = MaterialTheme.shapes.extraLargeIncreased,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ) {
+                    val show by animateFloatAsState(if (image != null) 1f else 0f, tween(400), label = "image")
+                    image?.let {
+                        Image(
+                            bitmap = it,
+                            contentDescription = "Screenshot",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    alpha = show
+                                    scaleX = 0.94f + 0.06f * show
+                                    scaleY = 0.94f + 0.06f * show
+                                }
+                                .padding(12.dp),
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
                 }
-            }
-            OutlinedTextField(
-                value = caption,
-                onValueChange = onCaption,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Add a note") },
-                maxLines = 3,
-                shape = MaterialTheme.shapes.extraLarge,
-            )
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ReminderChip(remindAt, onRemind)
-            }
-            if (hasNote) NoteCard(player) else FilledTonalButton(onClick = onRecordNote, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Rounded.Mic, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Add a voice note")
-            }
-            if (hasNote) TranscriptCard(transcript, transcribing) { showTranscript = true; if (transcript == null) onTranscribe() }
-            // Floating toolbar: the main actions, with Edit as the lifted primary one.
-            // Starting "hidden" with a "visible" target plays the entrance on the first frame and keeps the layout steady.
-            val toolbarIn = remember { MutableTransitionState(false).apply { targetState = true } }
-            AnimatedVisibility(toolbarIn, enter = slideInVertically(tween(450)) { it } + fadeIn(tween(450))) {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    HorizontalFloatingToolbar(
-                        expanded = true,
-                        colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
-                        floatingActionButton = {
-                            FloatingToolbarDefaults.VibrantFloatingActionButton(onClick = onEdit) {
-                                Icon(Icons.Rounded.Edit, contentDescription = "Edit")
+                OutlinedTextField(
+                    value = caption,
+                    onValueChange = onCaption,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Add a note") },
+                    maxLines = 3,
+                    shape = MaterialTheme.shapes.extraLarge,
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ReminderChip(remindAt, onRemind)
+                    if (events.isNotEmpty() && !promptShown) {
+                        AssistChip(
+                            onClick = { promptShown = true },
+                            leadingIcon = { Icon(Icons.Rounded.Event, contentDescription = null) },
+                            label = { Text("Event found") },
+                        )
+                    }
+                }
+                if (hasNote) NoteCard(player) else FilledTonalButton(onClick = onRecordNote, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Rounded.Mic, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Add a voice note")
+                }
+                if (hasNote) TranscriptCard(transcript, transcribing) { showTranscript = true; if (transcript == null) onTranscribe() }
+                // Floating toolbar: the main actions, with Edit as the lifted primary one.
+                // Starting "hidden" with a "visible" target plays the entrance on the first frame and keeps the layout steady.
+                val toolbarIn = remember { MutableTransitionState(false).apply { targetState = true } }
+                AnimatedVisibility(toolbarIn, enter = slideInVertically(tween(450)) { it } + fadeIn(tween(450))) {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        HorizontalFloatingToolbar(
+                            expanded = true,
+                            colors = FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
+                            floatingActionButton = {
+                                FloatingToolbarDefaults.VibrantFloatingActionButton(onClick = onEdit) {
+                                    Icon(Icons.Rounded.Edit, contentDescription = "Edit")
+                                }
+                            },
+                        ) {
+                            IconButton(onClick = onPin) {
+                                AnimatedContent(pinned, transitionSpec = { (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut()) }, label = "pin") { isPinned ->
+                                    Icon(
+                                        if (isPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                        contentDescription = if (isPinned) "Unpin" else "Pin",
+                                    )
+                                }
                             }
-                        },
-                    ) {
-                        IconButton(onClick = onPin) {
-                            AnimatedContent(pinned, transitionSpec = { (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut()) }, label = "pin") { isPinned ->
-                                Icon(
-                                    if (isPinned) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                                    contentDescription = if (isPinned) "Unpin" else "Pin",
-                                )
+                            IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, contentDescription = "Share") }
+                            IconButton(onClick = { showText = true; onReadText(false) }) {
+                                Icon(Icons.Rounded.TextFields, contentDescription = "Text in image")
                             }
+                            IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, contentDescription = "Delete") }
                         }
-                        IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, contentDescription = "Share") }
-                        IconButton(onClick = { showText = true; onReadText(false) }) {
-                            Icon(Icons.Rounded.TextFields, contentDescription = "Text in image")
-                        }
-                        IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, contentDescription = "Delete") }
                     }
                 }
             }
+            EventPrompt(
+                events,
+                visible = promptShown,
+                onHide = { promptShown = false },
+                onAdd = { promptShown = false; context.startActivity(AddEventActivity.intent(context, events)) },
+                onRemind = { e, o ->
+                    promptShown = false
+                    if (caption.isBlank()) onCaption(e.title) // so the alarm says what it is for
+                    onRemind(o.at)
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = padding.calculateTopPadding() + 4.dp, start = 16.dp, end = 16.dp),
+            )
         }
     }
 
+    if (zoom) image?.let { ZoomView(it) { zoom = false } }
     if (showText) TextSheet(ocrText, ocrBusy, onReadAgain = { onReadText(true) }, onDismiss = { showText = false })
     if (showTranscript) {
         TextSheet(
@@ -546,23 +577,41 @@ private fun TextSheet(
 }
 
 /**
- * Slides in from the top once the text has been read and holds an event: add it to the calendars, or set an alarm for it.
+ * Floats over the page like a notification (it never moves the content): slides in from the top once the text holds
+ * an event, stays 7 seconds, slides out. Add it to the calendars, or set an alarm for it.
  * Several events? "Add" adds them all; the alarm is for the first one still ahead.
  */
 @Composable
-private fun EventPrompt(events: List<CalendarEvent>, onAdd: () -> Unit, onRemind: (CalendarEvent, ReminderOption) -> Unit) {
-    var dismissed by remember { mutableStateOf(false) }
+private fun EventPrompt(
+    events: List<CalendarEvent>,
+    visible: Boolean,
+    onHide: () -> Unit,
+    onAdd: () -> Unit,
+    onRemind: (CalendarEvent, ReminderOption) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var menu by remember { mutableStateOf(false) }
     val now = remember(events) { System.currentTimeMillis() }
     val main = remember(events) { events.firstOrNull { it.end >= now } ?: events.firstOrNull() }
+    LaunchedEffect(visible, menu) {
+        if (visible && !menu) {
+            delay(7_000)
+            onHide()
+        }
+    }
     AnimatedVisibility(
-        visible = main != null && !dismissed,
-        enter = slideInVertically(tween(450)) { -it } + expandVertically(tween(450)) + fadeIn(tween(450)),
-        exit = slideOutVertically(tween(300)) { -it } + shrinkVertically(tween(300)) + fadeOut(tween(300)),
+        visible = visible && main != null,
+        modifier = modifier,
+        enter = slideInVertically(tween(450)) { -it - 200 } + fadeIn(tween(450)),
+        exit = slideOutVertically(tween(300)) { -it - 200 } + fadeOut(tween(300)),
     ) {
         main?.let { e ->
-            Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) {
-                Column(Modifier.padding(start = 20.dp, top = 12.dp, end = 8.dp, bottom = 12.dp)) {
+            Surface(
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shadowElevation = 8.dp,
+            ) {
+                Column(Modifier.padding(start = 20.dp, top = 12.dp, end = 12.dp, bottom = 16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -573,17 +622,17 @@ private fun EventPrompt(events: List<CalendarEvent>, onAdd: () -> Unit, onRemind
                             )
                             Text(e.whenText(), style = MaterialTheme.typography.bodyMedium)
                         }
-                        IconButton(onClick = { dismissed = true }) { Icon(Icons.Rounded.Close, contentDescription = "Dismiss") }
+                        IconButton(onClick = onHide) { Icon(Icons.Rounded.Close, contentDescription = "Dismiss") }
                     }
-                    Row(Modifier.padding(top = 8.dp, end = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = onAdd) {
+                    Column(Modifier.padding(top = 8.dp, end = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
                             Text(if (events.size > 1) "Add ${events.size} to calendar" else "Add to calendar", Modifier.padding(start = 8.dp))
                         }
                         val options = e.reminderOptions()
                         if (options.isNotEmpty()) {
                             Box {
-                                FilledTonalButton(onClick = { menu = true }) {
+                                FilledTonalButton(onClick = { menu = true }, modifier = Modifier.fillMaxWidth()) {
                                     Icon(Icons.Rounded.Alarm, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Text("Remind me", Modifier.padding(start = 8.dp))
                                 }
@@ -596,6 +645,54 @@ private fun EventPrompt(events: List<CalendarEvent>, onAdd: () -> Unit, onRemind
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** The screenshot full screen on black: pinch to zoom, drag to move, double tap to zoom in and out. */
+@Composable
+private fun ZoomView(image: ImageBitmap, onClose: () -> Unit) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        var scale by remember { mutableFloatStateOf(1f) }
+        var offset by remember { mutableStateOf(Offset.Zero) }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectTapGestures(onDoubleTap = { tap ->
+                        val s = if (scale > 1f) 1f else 3f
+                        val centre = Offset(size.width / 2f, size.height / 2f)
+                        offset = if (s == 1f) Offset.Zero else (offset - (tap - centre)) * (s / scale) + (tap - centre)
+                        scale = s
+                    })
+                }
+                .pointerInput(Unit) {
+                    detectTransformGestures { centroid, pan, zoom, _ ->
+                        val s = (scale * zoom).coerceIn(1f, 8f)
+                        val centre = Offset(size.width / 2f, size.height / 2f)
+                        val moved = (offset - (centroid - centre)) * (s / scale) + (centroid - centre) + pan
+                        val maxX = size.width * (s - 1f) / 2f
+                        val maxY = size.height * (s - 1f) / 2f
+                        offset = Offset(moved.x.coerceIn(-maxX, maxX), moved.y.coerceIn(-maxY, maxY))
+                        scale = s
+                    }
+                },
+        ) {
+            Image(
+                bitmap = image,
+                contentDescription = "Screenshot, zoomable",
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offset.x
+                    translationY = offset.y
+                },
+                contentScale = ContentScale.Fit,
+            )
+            IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp)) {
+                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color.White)
             }
         }
     }
