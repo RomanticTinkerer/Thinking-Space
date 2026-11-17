@@ -148,6 +148,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class GalleryActivity : ComponentActivity() {
 
+    private val role = AssistantRoleLauncher(this)
     private val io = Executors.newSingleThreadExecutor()
     private val thumbs = LruCache<Uri, ImageBitmap>(80)
     private val ocrIo = Executors.newSingleThreadExecutor()
@@ -168,9 +169,6 @@ class GalleryActivity : ComponentActivity() {
         noteOpen = intent.getBooleanExtra(EXTRA_NEW_NOTE, false) || intent.getStringExtra(EXTRA_NEW_NOTE) == "true" // the "New note" launcher shortcut
         setContent {
             OtsTheme {
-                val askRole = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-                    isDefault = isDefaultAssistant(this)
-                }
                 GalleryScreen(
                     shots = shots,
                     unscanned = unscanned,
@@ -212,7 +210,7 @@ class GalleryActivity : ComponentActivity() {
                         chosen.forEach { meta.setPinned(it.baseName, pin) }
                         io.execute(::reload)
                     },
-                    onSetDefault = { askRole.launch(assistantRoleIntent(this)) },
+                    onSetDefault = role::launch,
                     onSetup = { startActivity(Intent(this, MainActivity::class.java)) },
                 )
             }
@@ -222,7 +220,7 @@ class GalleryActivity : ComponentActivity() {
         val prefs = getSharedPreferences("app", Context.MODE_PRIVATE)
         if (!isDefaultAssistant(this) && !prefs.getBoolean("asked_default", false)) {
             prefs.edit().putBoolean("asked_default", true).apply()
-            startActivity(assistantRoleIntent(this))
+            role.launch()
         }
     }
 
@@ -412,6 +410,7 @@ private fun GalleryScreen(
     Scaffold(
         modifier = Modifier.background(wash),
         containerColor = Color.Transparent,
+        contentColor = scheme.onSurface, // a transparent container gives no content colour, so text came out black
         floatingActionButton = {
             AnimatedVisibility(visible = !selecting, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {

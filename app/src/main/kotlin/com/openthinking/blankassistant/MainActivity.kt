@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
 
     private var isDefault by mutableStateOf(false)
     private var hasMic by mutableStateOf(false)
+    private val role = AssistantRoleLauncher(this)
     private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { hasMic = it }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -92,7 +93,7 @@ class MainActivity : ComponentActivity() {
                     hasMic = hasMic,
                     version = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty(),
                     onBack = ::finish,
-                    onDefaultAssistant = { startActivity(assistantRoleIntent(this)) },
+                    onDefaultAssistant = role::launch,
                     onMic = { askMic.launch(Manifest.permission.RECORD_AUDIO) },
                     onRescan = { MemoryMeta(this).clearOcr() },
                     onOpen = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } },
