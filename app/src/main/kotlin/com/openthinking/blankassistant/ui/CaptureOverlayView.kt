@@ -61,7 +61,6 @@ class CaptureOverlayView(
         fun onSave()
         fun onDismiss()
         fun onPin(pinned: Boolean)
-        fun onRemind(option: Remind)
         fun onShare()
         fun onCopyText()
         fun onCalendar()
@@ -69,14 +68,6 @@ class CaptureOverlayView(
     }
 
     enum class NoteState { NONE, RECORDING, RECORDED }
-
-    /** Tapping the Remind chip steps through these; the label says what is set. */
-    enum class Remind(val label: Int) {
-        OFF(R.string.chip_remind),
-        HOUR(R.string.chip_remind_hour),
-        EVENING(R.string.chip_remind_evening),
-        TOMORROW(R.string.chip_remind_tomorrow),
-    }
 
     /** Whether the text in the screenshot has been read yet (it takes a moment after the capture). */
     enum class TextState { READING, READY, NONE }
@@ -140,17 +131,14 @@ class CaptureOverlayView(
     }
 
     private var pinned = false
-    private var remind = Remind.OFF
 
     private val pinChip = OptionChip().apply {
         setOnClickListener { pinned = !pinned; refreshChips(); listener.onPin(pinned) }
     }
+    // Only there once a time has been found in the screenshot; it is the same alarm as the card's button.
     private val remindChip = OptionChip().apply {
-        setOnClickListener {
-            remind = Remind.entries[(remind.ordinal + 1) % Remind.entries.size]
-            refreshChips()
-            listener.onRemind(remind)
-        }
+        visibility = GONE
+        setOnClickListener { toggleEventRemind() }
     }
     private val shareChip = OptionChip().apply {
         show(R.drawable.ic_share, context.getString(R.string.chip_share), false)
@@ -294,6 +282,10 @@ class CaptureOverlayView(
         listener.onCalendar()
     }
     private val eventRemind = eventButton(R.drawable.ic_alarm, R.string.event_prompt_remind, c.primary.content, c.primary.fill) {
+        toggleEventRemind()
+    }
+
+    private fun toggleEventRemind() {
         eventRemindOn = !eventRemindOn
         refreshEventRemind()
         listener.onEventRemind(eventRemindOn)
@@ -407,7 +399,6 @@ class CaptureOverlayView(
         setNoteState(NoteState.NONE)
         setBusy(false)
         pinned = false
-        remind = Remind.OFF
         refreshChips()
         setTextState(TextState.READING)
         setEvent(null)
@@ -624,14 +615,13 @@ class CaptureOverlayView(
         }
     }
 
-    /** Pin and Remind show what is set; the other chips never change. */
+    /** Pin shows what is set; the other chips never change. */
     private fun refreshChips() {
         pinChip.show(
             if (pinned) R.drawable.ic_star else R.drawable.ic_star_border,
             context.getString(if (pinned) R.string.chip_pinned else R.string.chip_pin),
             pinned,
         )
-        remindChip.show(R.drawable.ic_alarm, context.getString(remind.label), remind != Remind.OFF)
     }
 
     /** Copy text stays greyed out until the text has been read. */
@@ -659,6 +649,7 @@ class CaptureOverlayView(
         eventTitle.text = title
         eventWhen.text = whenText
         eventRemind.visibility = if (canRemind) VISIBLE else GONE
+        remindChip.visibility = if (canRemind) VISIBLE else GONE
         eventCard.alpha = 0f
         eventCard.visibility = VISIBLE
         eventCard.post {
@@ -680,6 +671,11 @@ class CaptureOverlayView(
         val tone = if (eventRemindOn) c.tertiary else Tone(c.primary.content, c.primary.fill)
         eventRemind.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(tone.fill) }
         eventRemind.imageTintList = ColorStateList.valueOf(tone.content)
+        remindChip.show(
+            R.drawable.ic_alarm,
+            context.getString(if (eventRemindOn) R.string.chip_reminder_set else R.string.chip_remind),
+            eventRemindOn,
+        )
     }
 
     /** Live feedback while recording: timer text plus the level bars. */

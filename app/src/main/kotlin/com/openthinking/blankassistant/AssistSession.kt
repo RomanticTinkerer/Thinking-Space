@@ -6,6 +6,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.app.assist.AssistContent
+import android.app.assist.AssistStructure
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -27,10 +29,10 @@ import com.openthinking.blankassistant.events.whenText
 import com.openthinking.blankassistant.ocr.TextReader
 import com.openthinking.blankassistant.reminder.Reminders
 import com.openthinking.blankassistant.storage.CaptureStore
+import com.openthinking.blankassistant.storage.AppSettings
 import com.openthinking.blankassistant.storage.MemoryMeta
 import com.openthinking.blankassistant.ui.CaptureOverlayView
 import com.openthinking.blankassistant.ui.CaptureOverlayView.NoteState
-import com.openthinking.blankassistant.ui.CaptureOverlayView.Remind
 import com.openthinking.blankassistant.ui.CaptureOverlayView.TextState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,14 +81,20 @@ class AssistSession(sessionContext: Context) :
 
     // The option chips. All of it is applied to the saved screenshot, so nothing is stored if the user discards.
     private var pinned = false
-    private var remind = Remind.OFF
     private var ocrJob: Job? = null
     private var ocrText: String? = null // null while still being read
     private var events: List<CalendarEvent> = emptyList()
     private var event: CalendarEvent? = null // the one "Remind me" is about: the first that is still ahead
     private var eventRemindAt = 0L
+    private var sourceApp: String? = null // package of the app the screenshot was taken in
 
     override fun onCreateContentView(): View = overlay
+
+    /** Which app is on screen: the assist data names the foreground activity. */
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun onHandleAssist(data: Bundle?, structure: AssistStructure?, content: AssistContent?) {
+        sourceApp = structure?.activityComponent?.packageName
+    }
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
@@ -150,7 +158,7 @@ class AssistSession(sessionContext: Context) :
                 overlay.setEvent(
                     if (more > 0) "${it.title} (+$more more)" else it.title,
                     it.whenText(),
-                    canRemind = it.reminderOptions().isNotEmpty(),
+                    canRemind = !it.allDay && it.reminderOptions().isNotEmpty(), // an alarm needs a time
                 )
             }
         }
@@ -197,11 +205,6 @@ class AssistSession(sessionContext: Context) :
 
     override fun onPin(pinned: Boolean) {
         this.pinned = pinned
-    }
-
-    override fun onRemind(option: Remind) {
-        remind = option
-        if (option != Remind.OFF) warnIfNoNotifications()
     }
 
     // An assistant overlay can't ask for permissions, so say so instead of setting a reminder that never shows.
@@ -312,7 +315,7 @@ class AssistSession(sessionContext: Context) :
         uiScope.launch {
             val (imageUri, noteSaved) = withContext(Dispatchers.IO) {
                 if (savedImageUri == null) {
-                    CaptureStore.saveScreenshot(context, bitmap)?.let { (uri, base) ->
+                    CaptureStore.saveScreenshot(context, withoutStatusBar(bitmap))?.let { (uri, base) ->
                         savedImageUri = uri
                         savedBaseName = base
                     }
@@ -349,14 +352,23 @@ class AssistSession(sessionContext: Context) :
         if (pinned) meta.setPinned(base, true)
         // Saves the gallery from reading the same screenshot again. Still null if the user was quicker than the reader.
         ocrText?.let { meta.setOcr(base, it) }
-        if (eventRemindAt > 0L) event?.let { if (meta.caption(base).isBlank()) meta.setCaption(base, it.title) }
-        val at = if (eventRemindAt > 0L) eventRemindAt else when (remind) {
-            Remind.OFF -> 0L
-            Remind.HOUR -> Reminders.hoursFromNow(1)
-            Remind.EVENING -> Reminders.nextAt(20)
-            Remind.TOMORROW -> Reminders.nextAt(9, daysAhead = 1)
+        sourceApp?.let { meta.setApp(base, it) }
+        if (eventRemindAt > 0L) {
+            event?.let { if (meta.caption(base).isBlank()) meta.setCaption(base, it.title) }
+            Reminders.schedule(context, uri, base, eventRemindAt)
         }
-        if (at > 0L) Reminders.schedule(context, uri, base, at)
+    }
+
+    /** The saved copy has no status bar (clock, battery, notifications), unless that is switched off in settings. */
+    private fun withoutStatusBar(shot: Bitmap): Bitmap {
+        if (!AppSettings.hideStatusBar(context)) return shot
+        val id = context.resources.getIdentifier("status_bar_height", "dimen", "android")
+        val bar = if (id > 0) context.resources.getDimensionPixelSize(id) else 0
+        // The screenshot can be scaled compared with the screen.
+        val cut = (bar * shot.width / context.resources.displayMetrics.widthPixels.toFloat()).toInt()
+        if (cut <= 0 || cut >= shot.height / 4) return shot
+        val readable = if (shot.config == Bitmap.Config.HARDWARE) shot.copy(Bitmap.Config.ARGB_8888, false) ?: return shot else shot
+        return Bitmap.createBitmap(readable, 0, cut, readable.width, readable.height - cut)
     }
 
     private fun share(uri: Uri) {
@@ -419,8 +431,8 @@ class AssistSession(sessionContext: Context) :
         events = emptyList()
         event = null
         eventRemindAt = 0L
+        sourceApp = null
         pinned = false
-        remind = Remind.OFF
     }
 
     /** Stops any recording and deletes the temporary note; safe to call repeatedly. */

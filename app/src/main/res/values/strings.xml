@@ -13,9 +13,7 @@
     <string name="chip_pin">Pin</string>
     <string name="chip_pinned">Pinned</string>
     <string name="chip_remind">Remind</string>
-    <string name="chip_remind_hour">In 1 hour</string>
-    <string name="chip_remind_evening">Tonight</string>
-    <string name="chip_remind_tomorrow">Tomorrow</string>
+    <string name="chip_reminder_set">Alarm set</string>
     <string name="chip_share">Share</string>
     <string name="chip_copy">Copy text</string>
     <string name="chip_reading">Reading\u2026</string>

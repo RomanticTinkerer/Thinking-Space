@@ -190,6 +190,7 @@ class ViewerActivity : ComponentActivity() {
                         if (base.isNotEmpty()) meta.setPinned(base, pinned)
                     },
                     onRecordNote = { if (base.isNotEmpty()) startActivity(Intent(this, MemoActivity::class.java).putExtra(MemoActivity.EXTRA_NOTE_FOR, base)) },
+                    onDeleteNote = ::deleteNote,
                     onShare = ::share,
                     onRemind = ::remind,
                     // Normal activity here, so a plain startActivity is fine (unlike from the assistant session).
@@ -303,6 +304,21 @@ class ViewerActivity : ComponentActivity() {
         }
     }
 
+    /** Removes the voice note (and the words written from it); the screenshot stays. */
+    private fun deleteNote() {
+        val doomed = note ?: return
+        player.release()
+        io.execute {
+            CaptureStore.deleteNote(this, doomed)
+            if (base.isNotEmpty()) meta.clearTranscript(base)
+            runOnUiThread {
+                note = null
+                transcript = null
+                player.load(null)
+            }
+        }
+    }
+
     /** [at] = epoch millis, or 0 to clear. */
     private fun remind(at: Long) {
         if (base.isEmpty()) return
@@ -352,12 +368,14 @@ private fun ViewerScreen(
     onCaption: (String) -> Unit,
     onPin: () -> Unit,
     onRecordNote: () -> Unit,
+    onDeleteNote: () -> Unit,
     onShare: () -> Unit,
     onRemind: (Long) -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
+    var confirmDeleteNote by remember { mutableStateOf(false) }
     var showText by remember { mutableStateOf(false) }
     var showTranscript by remember { mutableStateOf(false) }
     var zoom by remember { mutableStateOf(false) }
@@ -427,7 +445,8 @@ private fun ViewerScreen(
                     shape = MaterialTheme.shapes.extraLarge,
                 )
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ReminderChip(remindAt, onRemind)
+                    // An alarm only makes sense when a time was found in the screenshot (or one is already set).
+                    if (remindAt > 0L || events.any { !it.allDay }) ReminderChip(remindAt, onRemind)
                     if (events.isNotEmpty() && !promptShown) {
                         AssistChip(
                             onClick = { promptShown = true },
@@ -436,7 +455,7 @@ private fun ViewerScreen(
                         )
                     }
                 }
-                if (hasNote) NoteCard(player) else FilledTonalButton(onClick = onRecordNote, modifier = Modifier.fillMaxWidth()) {
+                if (hasNote) NoteCard(player) { confirmDeleteNote = true } else FilledTonalButton(onClick = onRecordNote, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Rounded.Mic, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Add a voice note")
@@ -504,6 +523,16 @@ private fun ViewerScreen(
             retryLabel = "Write out again",
             onReadAgain = onTranscribe,
             onDismiss = { showTranscript = false },
+        )
+    }
+
+    if (confirmDeleteNote) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteNote = false },
+            title = { Text("Delete voice note?") },
+            text = { Text("The screenshot stays. You can record a new note later.") },
+            confirmButton = { TextButton(onClick = { confirmDeleteNote = false; onDeleteNote() }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { confirmDeleteNote = false }) { Text("Cancel") } },
         )
     }
 
@@ -630,7 +659,7 @@ private fun EventPrompt(
                             Text(if (events.size > 1) "Add ${events.size} to calendar" else "Add to calendar", Modifier.padding(start = 8.dp))
                         }
                         val options = e.reminderOptions()
-                        if (options.isNotEmpty()) {
+                        if (!e.allDay && options.isNotEmpty()) {
                             Box {
                                 FilledTonalButton(onClick = { menu = true }, modifier = Modifier.fillMaxWidth()) {
                                     Icon(Icons.Rounded.Alarm, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -734,7 +763,7 @@ private fun ReminderChip(remindAt: Long, onRemind: (Long) -> Unit) {
 }
 
 @Composable
-private fun NoteCard(player: NotePlayer) {
+private fun NoteCard(player: NotePlayer, onDelete: () -> Unit) {
     // Keep the slider/time moving while playing.
     LaunchedEffect(player.playing) {
         while (player.playing) {
@@ -770,6 +799,7 @@ private fun NoteCard(player: NotePlayer) {
                     Text(format(player.duration), style = MaterialTheme.typography.labelMedium)
                 }
             }
+            IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, contentDescription = "Delete voice note") }
         }
     }
 }
