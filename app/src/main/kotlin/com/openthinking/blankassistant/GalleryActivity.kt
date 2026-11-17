@@ -753,7 +753,7 @@ private fun ShotCard(
                     )
                 }
                 if (shade > 0f) Box(Modifier.fillMaxSize().background(scheme.primary.copy(alpha = shade)))
-                AnimatedVisibility(
+                androidx.compose.animation.AnimatedVisibility(
                     visible = selecting,
                     modifier = Modifier.align(Alignment.TopEnd),
                     enter = scaleIn() + fadeIn(),
