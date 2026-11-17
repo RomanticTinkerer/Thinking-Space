@@ -28,6 +28,7 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -39,8 +40,9 @@ import java.util.Locale
  * Full-screen assistant overlay.
  *
  * When the screenshot arrives it is shown full-bleed (with a quick shutter flash), then morphs down
- * into a rounded thumbnail over a pure black backdrop. Below it sit three separate tiles:
- * Edit (filled), Record and Save (tonal). Colours follow the wallpaper on Android 12+ (see [Palette]).
+ * into a rounded thumbnail over a pure black backdrop. Below it sit a row of small option chips
+ * (Pin, Remind, Share, Copy text, Calendar) and three separate tiles: Edit (filled), Record and Save
+ * (tonal). Colours follow the wallpaper on Android 12+ (see [Palette]).
  *
  * It is a plain [View] tree with no AndroidX/Material dependency, because it lives in the
  * assistant session window rather than in an Activity.
@@ -57,9 +59,25 @@ class CaptureOverlayView(
         fun onRecordReset()
         fun onSave()
         fun onDismiss()
+        fun onPin(pinned: Boolean)
+        fun onRemind(option: Remind)
+        fun onShare()
+        fun onCopyText()
+        fun onCalendar()
     }
 
     enum class NoteState { NONE, RECORDING, RECORDED }
+
+    /** Tapping the Remind chip steps through these; the label says what is set. */
+    enum class Remind(val label: Int) {
+        OFF(R.string.chip_remind),
+        HOUR(R.string.chip_remind_hour),
+        EVENING(R.string.chip_remind_evening),
+        TOMORROW(R.string.chip_remind_tomorrow),
+    }
+
+    /** Whether the text in the screenshot has been read yet (it takes a moment after the capture). */
+    enum class TextState { READING, READY, NONE }
 
     private val density = resources.displayMetrics.density
     private fun dp(value: Float): Float = value * density
@@ -118,6 +136,54 @@ class CaptureOverlayView(
         }
         setPadding(dp(16f).toInt(), dp(7f).toInt(), dp(16f).toInt(), dp(7f).toInt())
     }
+
+    private var pinned = false
+    private var remind = Remind.OFF
+
+    private val pinChip = OptionChip().apply {
+        setOnClickListener { pinned = !pinned; refreshChips(); listener.onPin(pinned) }
+    }
+    private val remindChip = OptionChip().apply {
+        setOnClickListener {
+            remind = Remind.entries[(remind.ordinal + 1) % Remind.entries.size]
+            refreshChips()
+            listener.onRemind(remind)
+        }
+    }
+    private val shareChip = OptionChip().apply {
+        show(R.drawable.ic_share, context.getString(R.string.chip_share), false)
+        setOnClickListener { listener.onShare() }
+    }
+    private val copyChip = OptionChip().apply { setOnClickListener { listener.onCopyText() } }
+    private val calendarChip = OptionChip().apply {
+        show(R.drawable.ic_event, context.getString(R.string.chip_calendar), false)
+        visibility = GONE
+        setOnClickListener { listener.onCalendar() }
+    }
+
+    /** Small pill-shaped options above the tiles. Scrolls sideways if a narrow screen cannot fit them all. */
+    private val optionsRow = HorizontalScrollView(context).apply {
+        isHorizontalScrollBarEnabled = false
+        overScrollMode = OVER_SCROLL_NEVER
+        isFillViewport = true
+        addView(
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                for (chip in listOf(pinChip, remindChip, shareChip, copyChip, calendarChip)) {
+                    addView(
+                        chip,
+                        LinearLayout.LayoutParams(WRAP_CONTENT, dp(CHIP_DP).toInt()).apply {
+                            marginStart = dp(4f).toInt()
+                            marginEnd = dp(4f).toInt()
+                        },
+                    )
+                }
+            },
+            LayoutParams(MATCH_PARENT, WRAP_CONTENT),
+        )
+    }
+
     private val editButton = ActionButton(R.drawable.ic_edit, R.string.action_edit, c.primary).apply {
         setOnClickListener { listener.onEdit() }
     }
@@ -190,12 +256,15 @@ class CaptureOverlayView(
             statusText,
             LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { bottomMargin = dp(14f).toInt() },
         )
-        addView(pill, LinearLayout.LayoutParams(minOf(screenW - dp(32f).toInt(), dp(420f).toInt()), WRAP_CONTENT))
+        val width = minOf(screenW - dp(32f).toInt(), dp(420f).toInt())
+        addView(optionsRow, LinearLayout.LayoutParams(width, WRAP_CONTENT).apply { bottomMargin = dp(12f).toInt() })
+        addView(pill, LinearLayout.LayoutParams(width, WRAP_CONTENT))
     }
 
     private var frameCornerRadius = 0f
     private var shown = false
     private var busy = false
+    private var textReady = false
 
     // End state of the capture animation, and the animators that lead there.
     private var endScale = 1f
@@ -265,6 +334,11 @@ class CaptureOverlayView(
         scrim.alpha = 0f
         setNoteState(NoteState.NONE)
         setBusy(false)
+        pinned = false
+        remind = Remind.OFF
+        refreshChips()
+        setTextState(TextState.READING)
+        calendarChip.visibility = GONE
         if (ValueAnimator.areAnimatorsEnabled()) {
             waiting = ObjectAnimator.ofFloat(scrim, ALPHA, 0f, SCRIM_ALPHA_WAITING).setDuration(160).apply { start() }
         } else {
@@ -455,6 +529,7 @@ class CaptureOverlayView(
     fun setNoteState(state: NoteState, durationMs: Long = 0L) {
         val recording = state == NoteState.RECORDING
         recordingRow.visibility = if (recording) VISIBLE else GONE
+        optionsRow.visibility = if (recording) GONE else VISIBLE
         editButton.visibility = if (recording) GONE else VISIBLE
         recordButton.visibility = if (recording) GONE else VISIBLE
         saveButton.visibility = if (recording) GONE else VISIBLE
@@ -476,6 +551,33 @@ class CaptureOverlayView(
         }
     }
 
+    /** Pin and Remind show what is set; the other chips never change. */
+    private fun refreshChips() {
+        pinChip.show(
+            if (pinned) R.drawable.ic_star else R.drawable.ic_star_border,
+            context.getString(if (pinned) R.string.chip_pinned else R.string.chip_pin),
+            pinned,
+        )
+        remindChip.show(R.drawable.ic_alarm, context.getString(remind.label), remind != Remind.OFF)
+    }
+
+    /** Copy text stays greyed out until the text has been read. */
+    fun setTextState(state: TextState) {
+        val label = when (state) {
+            TextState.READING -> R.string.chip_reading
+            TextState.READY -> R.string.chip_copy
+            TextState.NONE -> R.string.chip_no_text
+        }
+        copyChip.show(R.drawable.ic_copy, context.getString(label), false)
+        copyChip.isEnabled = state == TextState.READY && !busy
+        textReady = state == TextState.READY
+    }
+
+    /** Shows the Calendar chip once an event has been found in the text. */
+    fun setEventFound(found: Boolean) {
+        calendarChip.visibility = if (found) VISIBLE else GONE
+    }
+
     /** Live feedback while recording: timer text plus the level bars. */
     fun setRecordingProgress(durationMs: Long, amplitude: Int) {
         statusText.text = context.getString(R.string.status_recording, formatDuration(durationMs))
@@ -488,6 +590,8 @@ class CaptureOverlayView(
         editButton.isEnabled = !busy
         recordButton.isEnabled = !busy
         saveButton.isEnabled = !busy
+        for (chip in listOf(pinChip, remindChip, shareChip, calendarChip)) chip.isEnabled = !busy
+        copyChip.isEnabled = textReady && !busy
         stopButton.isEnabled = !busy
         deleteButton.isEnabled = !busy
         resetButton.isEnabled = !busy
@@ -608,6 +712,44 @@ class CaptureOverlayView(
         }
     }
 
+    /** Small pill: icon and caption. Active ones (pinned, reminder set) take the primary colour. */
+    private inner class OptionChip : LinearLayout(context) {
+        private val iconView = ImageView(context)
+        private val labelView = TextView(context)
+
+        init {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isClickable = true
+            isFocusable = true
+            setPadding(dp(14f).toInt(), 0, dp(16f).toInt(), 0)
+            addView(iconView, LayoutParams(dp(18f).toInt(), dp(18f).toInt()))
+            labelView.flex(DesignLanguages.default.type.labelLarge)
+            labelView.textSize = 13f
+            labelView.maxLines = 1
+            addView(labelView, LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(8f).toInt() })
+        }
+
+        fun show(icon: Int, text: String, active: Boolean) {
+            val tone = if (active) c.primary else Tone(c.surfaceHigh, c.onSurface)
+            fun shape(color: Int) = GradientDrawable().apply {
+                cornerRadius = dp(100f)
+                setColor(color)
+            }
+            iconView.setImageResource(icon)
+            iconView.imageTintList = ColorStateList.valueOf(tone.content)
+            labelView.text = text
+            labelView.setTextColor(tone.content)
+            background = RippleDrawable(ColorStateList.valueOf(c.ripple), shape(tone.fill), shape(Color.WHITE))
+            contentDescription = text
+        }
+
+        override fun setEnabled(enabled: Boolean) {
+            super.setEnabled(enabled)
+            alpha = if (enabled) 1f else 0.5f
+        }
+    }
+
     private class Tone(val fill: Int, val content: Int)
 
     /**
@@ -641,7 +783,8 @@ class CaptureOverlayView(
         const val DELETE_DP = 44f
         const val TILE_DP = 76f
         const val TOP_MARGIN_DP = 56f
-        const val CONTROLS_RESERVE_DP = 176f
+        const val CONTROLS_RESERVE_DP = 228f // tiles, status chip, option chips and margins
+        const val CHIP_DP = 40f
         const val MAX_SCALE = 0.66f
         const val SCRIM_ALPHA_WAITING = 0.25f
         const val SCRIM_ALPHA_FINAL = 1f // opaque: the real screen must not show behind the thumbnail

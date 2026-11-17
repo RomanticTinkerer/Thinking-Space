@@ -1,6 +1,8 @@
 package com.openthinking.blankassistant
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -8,6 +10,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.service.voice.VoiceInteractionSession
 import android.view.View
@@ -15,9 +18,17 @@ import android.view.ViewGroup
 import android.widget.Toast
 import com.openthinking.blankassistant.audio.RecordingService
 import com.openthinking.blankassistant.audio.VoiceNoteRecorder
+import com.openthinking.blankassistant.events.CalendarEvent
+import com.openthinking.blankassistant.events.EventParser
+import com.openthinking.blankassistant.events.toIntent
+import com.openthinking.blankassistant.ocr.TextReader
+import com.openthinking.blankassistant.reminder.Reminders
 import com.openthinking.blankassistant.storage.CaptureStore
+import com.openthinking.blankassistant.storage.MemoryMeta
 import com.openthinking.blankassistant.ui.CaptureOverlayView
 import com.openthinking.blankassistant.ui.CaptureOverlayView.NoteState
+import com.openthinking.blankassistant.ui.CaptureOverlayView.Remind
+import com.openthinking.blankassistant.ui.CaptureOverlayView.TextState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,7 +44,8 @@ import java.io.File
  * One assistant invocation (hold power button, etc.).
  *
  * The system hands us a screenshot of whatever was on screen via [onHandleScreenshot]; we show it in
- * [CaptureOverlayView] and let the user Edit it, attach a voice note, or just Save it.
+ * [CaptureOverlayView] and let the user Edit it, attach a voice note, or just Save it. Small options
+ * next to those: pin, remind later, share, copy the text in it, or add an event it mentions to the calendar.
  *
  * Nothing is written to shared storage until the user chooses Edit or Save; dismissing discards
  * everything, including any in-progress recording.
@@ -43,7 +55,7 @@ class AssistSession(sessionContext: Context) :
     CaptureOverlayView.Listener,
     VoiceNoteRecorder.Callbacks {
 
-    private enum class Pending { SAVE, EDIT }
+    private enum class Pending { SAVE, EDIT, SHARE, CALENDAR }
 
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val overlay by lazy { CaptureOverlayView(context, this) }
@@ -61,6 +73,13 @@ class AssistSession(sessionContext: Context) :
     private var pending: Pending? = null
     private var busy = false
     private var screenshotTimeout: Job? = null
+
+    // The option chips. All of it is applied to the saved screenshot, so nothing is stored if the user discards.
+    private var pinned = false
+    private var remind = Remind.OFF
+    private var ocrJob: Job? = null
+    private var ocrText: String? = null // null while still being read
+    private var event: CalendarEvent? = null
 
     override fun onCreateContentView(): View = overlay
 
@@ -100,6 +119,30 @@ class AssistSession(sessionContext: Context) :
         }
         this.screenshot = screenshot
         overlay.showScreenshot(screenshot)
+        readText(screenshot)
+    }
+
+    /** Reads the text in the capture in the background, once the opening animation is done (it would make it stutter). */
+    private fun readText(shot: Bitmap) {
+        ocrJob?.cancel()
+        ocrJob = uiScope.launch {
+            delay(OCR_DELAY_MS)
+            val text = withContext(Dispatchers.Default) {
+                // The system may hand over a hardware bitmap, whose pixels cannot be read.
+                val readable = if (shot.config == Bitmap.Config.HARDWARE) shot.copy(Bitmap.Config.ARGB_8888, false) else shot
+                readable?.let { TextReader(context).use { reader -> reader.read(it) } }
+            }
+            if (text == null) { // could not even read the pixels; stays unknown, so the gallery scans it later
+                overlay.setTextState(TextState.NONE)
+                return@launch
+            }
+            ocrText = text
+            // ponytail: with several events the first upcoming one is offered; the viewer lists them all.
+            val found = EventParser.parse(text)
+            event = found.firstOrNull { it.end >= System.currentTimeMillis() } ?: found.firstOrNull()
+            overlay.setTextState(if (text.isBlank()) TextState.NONE else TextState.READY)
+            overlay.setEventFound(event != null)
+        }
     }
 
     override fun onHide() {
@@ -140,6 +183,31 @@ class AssistSession(sessionContext: Context) :
     }
 
     override fun onSave() = completeWith(Pending.SAVE)
+
+    override fun onPin(pinned: Boolean) {
+        this.pinned = pinned
+    }
+
+    override fun onRemind(option: Remind) {
+        remind = option
+        // An assistant overlay can't ask for permissions, so say so instead of setting a reminder that never shows.
+        if (option != Remind.OFF && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            toast(R.string.msg_need_notifications)
+        }
+    }
+
+    override fun onShare() = completeWith(Pending.SHARE)
+
+    override fun onCalendar() = completeWith(Pending.CALENDAR)
+
+    override fun onCopyText() {
+        val text = ocrText?.takeIf { it.isNotBlank() } ?: return
+        context.getSystemService(ClipboardManager::class.java)
+            .setPrimaryClip(ClipData.newPlainText("Screenshot text", text))
+        toast(R.string.msg_text_copied)
+    }
 
     override fun onEdit() = completeWith(Pending.EDIT)
 
@@ -226,6 +294,7 @@ class AssistSession(sessionContext: Context) :
                     }
                 }
                 val base = savedBaseName
+                if (savedImageUri != null && base != null) applyOptions(savedImageUri!!, base)
                 val noteUri = if (savedImageUri != null && base != null && note != null) {
                     CaptureStore.saveVoiceNote(context, note, base)
                 } else {
@@ -243,8 +312,42 @@ class AssistSession(sessionContext: Context) :
             when (action) {
                 Pending.SAVE -> toast(if (noteSaved) R.string.msg_saved_with_note else R.string.msg_saved)
                 Pending.EDIT -> openInEditor(imageUri)
+                Pending.SHARE -> share(imageUri)
+                Pending.CALENDAR -> event?.let { openCalendar(it) }
             }
             finish()
+        }
+    }
+
+    /** Pin, reminder and the text that was already read go onto the saved screenshot. */
+    private fun applyOptions(uri: Uri, base: String) {
+        val meta = MemoryMeta(context)
+        if (pinned) meta.setPinned(base, true)
+        // Saves the gallery from reading the same screenshot again. Still null if the user was quicker than the reader.
+        ocrText?.let { meta.setOcr(base, it) }
+        val at = when (remind) {
+            Remind.OFF -> 0L
+            Remind.HOUR -> Reminders.hoursFromNow(1)
+            Remind.EVENING -> Reminders.nextAt(20)
+            Remind.TOMORROW -> Reminders.nextAt(9, daysAhead = 1)
+        }
+        if (at > 0L) Reminders.schedule(context, uri, base, at)
+    }
+
+    private fun share(uri: Uri) {
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("image/png")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startActivityFromSession(Intent.createChooser(send, null))
+    }
+
+    private fun openCalendar(event: CalendarEvent) {
+        try {
+            startAssistantActivity(event.toIntent())
+        } catch (e: Exception) {
+            Timber.w(e, "No calendar app")
+            toast(R.string.msg_no_calendar)
         }
     }
 
@@ -287,10 +390,16 @@ class AssistSession(sessionContext: Context) :
         savedBaseName = null
         pending = null
         busy = false
+        ocrText = null
+        event = null
+        pinned = false
+        remind = Remind.OFF
     }
 
     /** Stops any recording and deletes the temporary note; safe to call repeatedly. */
     private fun releaseCapture() {
+        ocrJob?.cancel()
+        ocrJob = null
         recorder?.discard()
         recorder = null
         RecordingService.stop(context)
@@ -305,6 +414,7 @@ class AssistSession(sessionContext: Context) :
 
     private companion object {
         const val SCREENSHOT_TIMEOUT_MS = 1_500L
+        const val OCR_DELAY_MS = 1_200L
         const val EDITOR_ACTIVITY = "com.openthinking.blankassistant.editor.EditorActivity"
     }
 }

@@ -10,6 +10,21 @@
     <string name="action_discard">Discard</string>
     <string name="action_save">Save</string>
 
+    <string name="chip_pin">Pin</string>
+    <string name="chip_pinned">Pinned</string>
+    <string name="chip_remind">Remind</string>
+    <string name="chip_remind_hour">In 1 hour</string>
+    <string name="chip_remind_evening">Tonight</string>
+    <string name="chip_remind_tomorrow">Tomorrow</string>
+    <string name="chip_share">Share</string>
+    <string name="chip_copy">Copy text</string>
+    <string name="chip_reading">Reading\u2026</string>
+    <string name="chip_no_text">No text</string>
+    <string name="chip_calendar">Calendar</string>
+    <string name="msg_text_copied">Text copied</string>
+    <string name="msg_no_calendar">No calendar app found</string>
+    <string name="msg_need_notifications">Allow notifications in the app first, then set the reminder</string>
+
     <string name="status_recording">Recording  %1$s</string>
     <string name="status_note_attached">Voice note attached  %1$s</string>
 
