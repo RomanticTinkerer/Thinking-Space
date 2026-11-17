@@ -110,7 +110,6 @@ import com.openthinking.blankassistant.storage.MemoryMeta
 import com.openthinking.blankassistant.ui.OtsTheme
 import kotlinx.coroutines.delay
 import timber.log.Timber
-import java.util.Calendar
 import java.util.concurrent.Executors
 import android.widget.Toast
 import androidx.compose.ui.text.style.TextOverflow
@@ -588,9 +587,9 @@ private fun ReminderChip(remindAt: Long, onRemind: (Long) -> Unit) {
         )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             listOf(
-                "In 1 hour" to hoursFromNow(1),
-                "This evening, 8 PM" to nextAt(20),
-                "Tomorrow, 9 AM" to nextAt(9, daysAhead = 1),
+                "In 1 hour" to Reminders.hoursFromNow(1),
+                "This evening, 8 PM" to Reminders.nextAt(20),
+                "Tomorrow, 9 AM" to Reminders.nextAt(9, daysAhead = 1),
             ).forEach { (label, at) ->
                 DropdownMenuItem(text = { Text(label) }, onClick = { open = false; onRemind(at) })
             }
@@ -599,21 +598,6 @@ private fun ReminderChip(remindAt: Long, onRemind: (Long) -> Unit) {
             }
         }
     }
-}
-
-private fun hoursFromNow(h: Int) = System.currentTimeMillis() + h * DateUtils.HOUR_IN_MILLIS
-
-/** Next time the clock hits [hour]:00, at least [daysAhead] days out (today's slot is skipped once it has passed). */
-private fun nextAt(hour: Int, daysAhead: Int = 0): Long {
-    val c = Calendar.getInstance().apply {
-        add(Calendar.DAY_OF_YEAR, daysAhead)
-        set(Calendar.HOUR_OF_DAY, hour)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }
-    if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
-    return c.timeInMillis
 }
 
 @Composable

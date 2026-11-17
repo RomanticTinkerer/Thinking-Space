@@ -8,6 +8,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.text.format.DateUtils
+import java.util.Calendar
 import com.openthinking.blankassistant.R
 import com.openthinking.blankassistant.ViewerActivity
 import com.openthinking.blankassistant.storage.MemoryMeta
@@ -19,6 +21,21 @@ import com.openthinking.blankassistant.storage.MemoryMeta
 object Reminders {
     private const val CHANNEL_ID = "reminders"
     private const val EXTRA_BASE = "base"
+
+    fun hoursFromNow(h: Int) = System.currentTimeMillis() + h * DateUtils.HOUR_IN_MILLIS
+
+    /** Next time the clock hits [hour]:00, at least [daysAhead] days out (today's slot is skipped once it has passed). */
+    fun nextAt(hour: Int, daysAhead: Int = 0): Long {
+        val c = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, daysAhead)
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
+        return c.timeInMillis
+    }
 
     fun schedule(context: Context, image: Uri, base: String, at: Long) {
         context.getSystemService(AlarmManager::class.java)
