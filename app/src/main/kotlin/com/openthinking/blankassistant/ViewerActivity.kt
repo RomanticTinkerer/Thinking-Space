@@ -43,6 +43,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -54,6 +56,7 @@ import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
@@ -167,6 +170,7 @@ class ViewerActivity : ComponentActivity() {
                         pinned = !pinned
                         if (base.isNotEmpty()) meta.setPinned(base, pinned)
                     },
+                    onRecordNote = { if (base.isNotEmpty()) startActivity(Intent(this, MemoActivity::class.java).putExtra(MemoActivity.EXTRA_NOTE_FOR, base)) },
                     onShare = ::share,
                     onRemind = ::remind,
                     // Normal activity here, so a plain startActivity is fine (unlike from the assistant session).
@@ -328,6 +332,7 @@ private fun ViewerScreen(
     onBack: () -> Unit,
     onCaption: (String) -> Unit,
     onPin: () -> Unit,
+    onRecordNote: () -> Unit,
     onShare: () -> Unit,
     onRemind: (Long) -> Unit,
     onEdit: () -> Unit,
@@ -400,7 +405,11 @@ private fun ViewerScreen(
                 ReminderChip(remindAt, onRemind)
                 CalendarChip(events)
             }
-            if (hasNote) NoteCard(player)
+            if (hasNote) NoteCard(player) else FilledTonalButton(onClick = onRecordNote, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.Mic, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Add a voice note")
+            }
             if (hasNote) TranscriptCard(transcript, transcribing) { showTranscript = true; if (transcript == null) onTranscribe() }
             // Floating toolbar: the main actions, with Edit as the lifted primary one.
             // Starting "hidden" with a "visible" target plays the entrance on the first frame and keeps the layout steady.

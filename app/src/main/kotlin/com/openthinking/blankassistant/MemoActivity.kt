@@ -65,6 +65,8 @@ class MemoActivity : ComponentActivity(), VoiceNoteRecorder.Callbacks {
     private val levels = mutableStateListOf<Float>()
     private var saving by mutableStateOf(false)
     private var cancelled = false
+    // Set when recording a note for an existing screenshot instead of a standalone memo.
+    private val noteFor by lazy { intent.getStringExtra(EXTRA_NOTE_FOR) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +77,7 @@ class MemoActivity : ComponentActivity(), VoiceNoteRecorder.Callbacks {
                     duration = duration,
                     levels = levels,
                     saving = saving,
+                    forNote = noteFor != null,
                     onSave = { recorder?.stop() },
                     onCancel = ::cancel,
                 )
@@ -117,10 +120,11 @@ class MemoActivity : ComponentActivity(), VoiceNoteRecorder.Callbacks {
         }
         saving = true
         thread {
-            val saved = CaptureStore.saveMemo(this, file, durationMs)
+            val target = noteFor
+            val saved = if (target != null) CaptureStore.saveVoiceNote(this, file, target) else CaptureStore.saveMemo(this, file, durationMs)
             file.delete()
             runOnUiThread {
-                Toast.makeText(this, if (saved != null) R.string.msg_memo_saved else R.string.msg_save_failed, Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, if (saved != null) if (noteFor != null) R.string.msg_voice_note_added else R.string.msg_memo_saved else R.string.msg_save_failed, Toast.LENGTH_SHORT).show()
                 finish()
             }
         }
@@ -137,9 +141,10 @@ class MemoActivity : ComponentActivity(), VoiceNoteRecorder.Callbacks {
         super.onDestroy()
     }
 
-    private companion object {
-        const val BARS = 36
-        const val MAX_AMPLITUDE = 32767f
+    companion object {
+        const val EXTRA_NOTE_FOR = "note_for"
+        private const val BARS = 36
+        private const val MAX_AMPLITUDE = 32767f
     }
 }
 
@@ -148,6 +153,7 @@ private fun MemoScreen(
     duration: Long,
     levels: List<Float>,
     saving: Boolean,
+    forNote: Boolean,
     onSave: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -157,7 +163,7 @@ private fun MemoScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("Voice memo", style = MaterialTheme.typography.labelLarge, color = scheme.primary)
+        Text(if (forNote) "Voice note" else "Voice memo", style = MaterialTheme.typography.labelLarge, color = scheme.primary)
         Spacer(Modifier.height(12.dp))
         Text(
             String.format(Locale.US, "%d:%02d", duration / 60_000, duration / 1000 % 60),
@@ -187,7 +193,7 @@ private fun MemoScreen(
                 Button(onClick = onSave) {
                     Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Save memo")
+                    Text(if (forNote) "Save note" else "Save memo")
                 }
             }
         }
