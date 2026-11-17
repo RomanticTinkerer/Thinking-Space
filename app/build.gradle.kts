@@ -14,8 +14,8 @@ android {
         applicationId = "com.openthinking.blankassistant"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
         // ONNX Runtime ships a native library per CPU type. Phones are arm64; skipping the
         // rest saves about 100 MB. Add "armeabi-v7a" or "x86_64" here for old phones or an emulator.
         ndk { abiFilters += "arm64-v8a" }
