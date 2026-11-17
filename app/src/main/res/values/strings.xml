@@ -20,7 +20,6 @@
     <string name="chip_copy">Copy text</string>
     <string name="chip_reading">Reading\u2026</string>
     <string name="chip_no_text">No text</string>
-    <string name="chip_calendar">Calendar</string>
     <string name="msg_text_copied">Text copied</string>
     <string name="msg_no_calendar">No calendar app found</string>
     <string name="msg_need_notifications">Allow notifications in the app first, then set the reminder</string>
@@ -53,4 +52,12 @@
     <string name="shortcut_memo_long">Record a voice memo</string>
     <string name="shortcut_note_short">New note</string>
     <string name="shortcut_note_long">Write a quick note</string>
+    <plurals name="msg_event_added">
+        <item quantity="one">Added to %d calendar</item>
+        <item quantity="other">Added to %d calendars</item>
+    </plurals>
+    <string name="event_prompt_calendar">Calendar</string>
+    <string name="event_prompt_remind">Remind me</string>
+    <string name="event_prompt_close">Dismiss</string>
+    <string name="msg_alarm_set">Alarm: %s</string>
 </resources>

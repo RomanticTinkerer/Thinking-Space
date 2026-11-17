@@ -16,6 +16,7 @@ import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.RoundedCorner
 import android.view.View
@@ -64,6 +65,7 @@ class CaptureOverlayView(
         fun onShare()
         fun onCopyText()
         fun onCalendar()
+        fun onEventRemind(on: Boolean)
     }
 
     enum class NoteState { NONE, RECORDING, RECORDED }
@@ -155,11 +157,6 @@ class CaptureOverlayView(
         setOnClickListener { listener.onShare() }
     }
     private val copyChip = OptionChip().apply { setOnClickListener { listener.onCopyText() } }
-    private val calendarChip = OptionChip().apply {
-        show(R.drawable.ic_event, context.getString(R.string.chip_calendar), false)
-        visibility = GONE
-        setOnClickListener { listener.onCalendar() }
-    }
 
     /** Small pill-shaped options above the tiles. Scrolls sideways if a narrow screen cannot fit them all. */
     private val optionsRow = HorizontalScrollView(context).apply {
@@ -170,7 +167,7 @@ class CaptureOverlayView(
             LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
-                for (chip in listOf(pinChip, remindChip, shareChip, copyChip, calendarChip)) {
+                for (chip in listOf(pinChip, remindChip, shareChip, copyChip)) {
                     addView(
                         chip,
                         LinearLayout.LayoutParams(WRAP_CONTENT, dp(CHIP_DP).toInt()).apply {
@@ -261,6 +258,74 @@ class CaptureOverlayView(
         addView(pill, LinearLayout.LayoutParams(width, WRAP_CONTENT))
     }
 
+    // --- The "event found" card that slides in from the top -----------------------------------
+
+    private var topInset = 0
+    private var eventRemindOn = false
+
+    private val eventTitle = TextView(context).apply {
+        flex(DesignLanguages.default.type.labelLarge)
+        setTextColor(c.primary.content)
+        textSize = 15f
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
+    }
+    private val eventWhen = TextView(context).apply {
+        flex(DesignLanguages.default.type.bodyLarge)
+        setTextColor(c.primary.content)
+        alpha = 0.8f
+        textSize = 12.5f
+        maxLines = 1
+    }
+
+    /** A round icon button. [fill] is the circle, [tint] the icon. */
+    private fun eventButton(icon: Int, description: Int, fill: Int, tint: Int, onClick: () -> Unit) = ImageView(context).apply {
+        setImageResource(icon)
+        imageTintList = ColorStateList.valueOf(tint)
+        contentDescription = context.getString(description)
+        val pad = dp(10f).toInt()
+        setPadding(pad, pad, pad, pad)
+        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(fill) }
+        setOnClickListener { onClick() }
+        isClickable = true
+    }
+
+    private val eventCalendar = eventButton(R.drawable.ic_event, R.string.event_prompt_calendar, c.primary.content, c.primary.fill) {
+        listener.onCalendar()
+    }
+    private val eventRemind = eventButton(R.drawable.ic_alarm, R.string.event_prompt_remind, c.primary.content, c.primary.fill) {
+        eventRemindOn = !eventRemindOn
+        refreshEventRemind()
+        listener.onEventRemind(eventRemindOn)
+    }
+    private val eventClose = eventButton(R.drawable.ic_close, R.string.event_prompt_close, Color.TRANSPARENT, c.primary.content) {
+        hideEvent()
+    }
+
+    private val eventCard = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        visibility = GONE
+        isClickable = true // taps on the card must not dismiss
+        setPadding(dp(18f).toInt(), dp(10f).toInt(), dp(8f).toInt(), dp(10f).toInt())
+        background = GradientDrawable().apply {
+            cornerRadius = dp(28f)
+            setColor(c.primary.fill)
+        }
+        addView(
+            LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(eventTitle)
+                addView(eventWhen)
+            },
+            LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f),
+        )
+        val size = dp(44f).toInt()
+        addView(eventCalendar, LinearLayout.LayoutParams(size, size).apply { marginStart = dp(8f).toInt() })
+        addView(eventRemind, LinearLayout.LayoutParams(size, size).apply { marginStart = dp(8f).toInt() })
+        addView(eventClose, LinearLayout.LayoutParams(dp(36f).toInt(), dp(36f).toInt()).apply { marginStart = dp(4f).toInt() })
+    }
+
     private var frameCornerRadius = 0f
     private var shown = false
     private var busy = false
@@ -281,6 +346,11 @@ class CaptureOverlayView(
         addView(deleteButton, LayoutParams(dp(DELETE_DP).toInt(), dp(DELETE_DP).toInt(), Gravity.TOP or Gravity.START))
         addView(message, LayoutParams(MATCH_PARENT, MATCH_PARENT, Gravity.CENTER))
         addView(
+            eventCard,
+            LayoutParams(minOf(screenW - dp(32f).toInt(), dp(420f).toInt()), WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+                .apply { topMargin = dp(EVENT_TOP_DP).toInt() },
+        )
+        addView(
             controls,
             // MATCH_PARENT width: with WRAP_CONTENT the button group got squeezed to the status text's width.
             LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM).apply {
@@ -294,6 +364,8 @@ class CaptureOverlayView(
 
         setOnApplyWindowInsetsListener { _, insets ->
             val bars = insets.getInsets(WindowInsets.Type.navigationBars())
+            topInset = insets.getInsets(WindowInsets.Type.statusBars()).top
+            (eventCard.layoutParams as LayoutParams).topMargin = dp(EVENT_TOP_DP).toInt() + topInset
             bottomInset = bars.bottom
             (controls.layoutParams as LayoutParams).bottomMargin = dp(28f).toInt() + bottomInset
             controls.requestLayout()
@@ -338,7 +410,7 @@ class CaptureOverlayView(
         remind = Remind.OFF
         refreshChips()
         setTextState(TextState.READING)
-        calendarChip.visibility = GONE
+        setEvent(null)
         if (ValueAnimator.areAnimatorsEnabled()) {
             waiting = ObjectAnimator.ofFloat(scrim, ALPHA, 0f, SCRIM_ALPHA_WAITING).setDuration(160).apply { start() }
         } else {
@@ -573,9 +645,35 @@ class CaptureOverlayView(
         textReady = state == TextState.READY
     }
 
-    /** Shows the Calendar chip once an event has been found in the text. */
-    fun setEventFound(found: Boolean) {
-        calendarChip.visibility = if (found) VISIBLE else GONE
+    /** Slides the "event found" card in from the top ([title] null hides it). */
+    fun setEvent(title: String?, whenText: String = "", canRemind: Boolean = false) {
+        eventCard.animate().cancel()
+        eventRemindOn = false
+        refreshEventRemind()
+        if (title == null) {
+            eventCard.visibility = GONE
+            return
+        }
+        eventTitle.text = title
+        eventWhen.text = whenText
+        eventRemind.visibility = if (canRemind) VISIBLE else GONE
+        eventCard.alpha = 0f
+        eventCard.visibility = VISIBLE
+        eventCard.post {
+            eventCard.translationY = -(eventCard.height + dp(EVENT_TOP_DP) + topInset)
+            eventCard.animate().translationY(0f).alpha(1f).setDuration(450).setInterpolator(OvershootInterpolator(0.9f)).start()
+        }
+    }
+
+    private fun hideEvent() {
+        eventCard.animate().translationY(-(eventCard.height + dp(EVENT_TOP_DP) + topInset)).alpha(0f).setDuration(250)
+            .withEndAction { eventCard.visibility = GONE }.start()
+    }
+
+    private fun refreshEventRemind() {
+        val tone = if (eventRemindOn) c.tertiary else Tone(c.primary.content, c.primary.fill)
+        eventRemind.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(tone.fill) }
+        eventRemind.imageTintList = ColorStateList.valueOf(tone.content)
     }
 
     /** Live feedback while recording: timer text plus the level bars. */
@@ -590,7 +688,8 @@ class CaptureOverlayView(
         editButton.isEnabled = !busy
         recordButton.isEnabled = !busy
         saveButton.isEnabled = !busy
-        for (chip in listOf(pinChip, remindChip, shareChip, calendarChip)) chip.isEnabled = !busy
+        for (chip in listOf(pinChip, remindChip, shareChip)) chip.isEnabled = !busy
+        for (button in listOf(eventCalendar, eventRemind, eventClose)) button.isEnabled = !busy
         copyChip.isEnabled = textReady && !busy
         stopButton.isEnabled = !busy
         deleteButton.isEnabled = !busy
@@ -785,6 +884,7 @@ class CaptureOverlayView(
         const val TOP_MARGIN_DP = 56f
         const val CONTROLS_RESERVE_DP = 228f // tiles, status chip, option chips and margins
         const val CHIP_DP = 40f
+        const val EVENT_TOP_DP = 12f
         const val MAX_SCALE = 0.66f
         const val SCRIM_ALPHA_WAITING = 0.25f
         const val SCRIM_ALPHA_FINAL = 1f // opaque: the real screen must not show behind the thumbnail

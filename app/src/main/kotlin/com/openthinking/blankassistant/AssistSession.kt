@@ -20,7 +20,10 @@ import com.openthinking.blankassistant.audio.RecordingService
 import com.openthinking.blankassistant.audio.VoiceNoteRecorder
 import com.openthinking.blankassistant.events.CalendarEvent
 import com.openthinking.blankassistant.events.EventParser
-import com.openthinking.blankassistant.events.toIntent
+import com.openthinking.blankassistant.events.AddEventActivity
+import com.openthinking.blankassistant.events.default
+import com.openthinking.blankassistant.events.reminderOptions
+import com.openthinking.blankassistant.events.whenText
 import com.openthinking.blankassistant.ocr.TextReader
 import com.openthinking.blankassistant.reminder.Reminders
 import com.openthinking.blankassistant.storage.CaptureStore
@@ -79,7 +82,9 @@ class AssistSession(sessionContext: Context) :
     private var remind = Remind.OFF
     private var ocrJob: Job? = null
     private var ocrText: String? = null // null while still being read
-    private var event: CalendarEvent? = null
+    private var events: List<CalendarEvent> = emptyList()
+    private var event: CalendarEvent? = null // the one "Remind me" is about: the first that is still ahead
+    private var eventRemindAt = 0L
 
     override fun onCreateContentView(): View = overlay
 
@@ -137,11 +142,17 @@ class AssistSession(sessionContext: Context) :
                 return@launch
             }
             ocrText = text
-            // ponytail: with several events the first upcoming one is offered; the viewer lists them all.
-            val found = EventParser.parse(text)
-            event = found.firstOrNull { it.end >= System.currentTimeMillis() } ?: found.firstOrNull()
+            events = EventParser.parse(text)
+            event = events.firstOrNull { it.end >= System.currentTimeMillis() } ?: events.firstOrNull()
             overlay.setTextState(if (text.isBlank()) TextState.NONE else TextState.READY)
-            overlay.setEventFound(event != null)
+            event?.let {
+                val more = events.size - 1
+                overlay.setEvent(
+                    if (more > 0) "${it.title} (+$more more)" else it.title,
+                    it.whenText(),
+                    canRemind = it.reminderOptions().isNotEmpty(),
+                )
+            }
         }
     }
 
@@ -190,8 +201,12 @@ class AssistSession(sessionContext: Context) :
 
     override fun onRemind(option: Remind) {
         remind = option
-        // An assistant overlay can't ask for permissions, so say so instead of setting a reminder that never shows.
-        if (option != Remind.OFF && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        if (option != Remind.OFF) warnIfNoNotifications()
+    }
+
+    // An assistant overlay can't ask for permissions, so say so instead of setting a reminder that never shows.
+    private fun warnIfNoNotifications() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             toast(R.string.msg_need_notifications)
@@ -201,6 +216,15 @@ class AssistSession(sessionContext: Context) :
     override fun onShare() = completeWith(Pending.SHARE)
 
     override fun onCalendar() = completeWith(Pending.CALENDAR)
+
+    override fun onEventRemind(on: Boolean) {
+        val alarm = if (on) event?.reminderOptions()?.default() else null
+        eventRemindAt = alarm?.at ?: 0L
+        if (alarm != null) {
+            toast(context.getString(R.string.msg_alarm_set, alarm.label.lowercase()))
+            warnIfNoNotifications()
+        }
+    }
 
     override fun onCopyText() {
         val text = ocrText?.takeIf { it.isNotBlank() } ?: return
@@ -313,7 +337,7 @@ class AssistSession(sessionContext: Context) :
                 Pending.SAVE -> toast(if (noteSaved) R.string.msg_saved_with_note else R.string.msg_saved)
                 Pending.EDIT -> openInEditor(imageUri)
                 Pending.SHARE -> share(imageUri)
-                Pending.CALENDAR -> event?.let { openCalendar(it) }
+                Pending.CALENDAR -> openCalendar(events)
             }
             finish()
         }
@@ -325,7 +349,8 @@ class AssistSession(sessionContext: Context) :
         if (pinned) meta.setPinned(base, true)
         // Saves the gallery from reading the same screenshot again. Still null if the user was quicker than the reader.
         ocrText?.let { meta.setOcr(base, it) }
-        val at = when (remind) {
+        if (eventRemindAt > 0L) event?.let { if (meta.caption(base).isBlank()) meta.setCaption(base, it.title) }
+        val at = if (eventRemindAt > 0L) eventRemindAt else when (remind) {
             Remind.OFF -> 0L
             Remind.HOUR -> Reminders.hoursFromNow(1)
             Remind.EVENING -> Reminders.nextAt(20)
@@ -342,9 +367,9 @@ class AssistSession(sessionContext: Context) :
         startActivityFromSession(Intent.createChooser(send, null))
     }
 
-    private fun openCalendar(event: CalendarEvent) {
+    private fun openCalendar(events: List<CalendarEvent>) {
         try {
-            startAssistantActivity(event.toIntent())
+            startAssistantActivity(AddEventActivity.intent(context, events))
         } catch (e: Exception) {
             Timber.w(e, "No calendar app")
             toast(R.string.msg_no_calendar)
@@ -391,7 +416,9 @@ class AssistSession(sessionContext: Context) :
         pending = null
         busy = false
         ocrText = null
+        events = emptyList()
         event = null
+        eventRemindAt = 0L
         pinned = false
         remind = Remind.OFF
     }
@@ -406,6 +433,10 @@ class AssistSession(sessionContext: Context) :
         noteFile?.delete()
         noteFile = null
         noteDurationMs = 0L
+    }
+
+    private fun toast(text: String) {
+        Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
     }
 
     private fun toast(resId: Int) {

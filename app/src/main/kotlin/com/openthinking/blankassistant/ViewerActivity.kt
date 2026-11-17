@@ -87,6 +87,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.Button
+import com.openthinking.blankassistant.events.AddEventActivity
+import com.openthinking.blankassistant.events.ReminderOption
+import com.openthinking.blankassistant.events.reminderOptions
+import com.openthinking.blankassistant.events.whenText
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -105,7 +114,6 @@ import com.openthinking.blankassistant.audio.NotePlayer
 import com.openthinking.blankassistant.asr.Transcriber
 import com.openthinking.blankassistant.events.CalendarEvent
 import com.openthinking.blankassistant.events.EventParser
-import com.openthinking.blankassistant.events.toIntent
 import com.openthinking.blankassistant.ocr.TextReader
 import com.openthinking.blankassistant.reminder.Reminders
 import com.openthinking.blankassistant.storage.CaptureStore
@@ -368,6 +376,16 @@ private fun ViewerScreen(
                 ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            val context = LocalContext.current
+            val events = remember(ocrText) { ocrText?.let(EventParser::parse).orEmpty() }
+            EventPrompt(
+                events,
+                onAdd = { context.startActivity(AddEventActivity.intent(context, events)) },
+                onRemind = { e, o ->
+                    if (caption.isBlank()) onCaption(e.title) // so the alarm says what it is for
+                    onRemind(o.at)
+                },
+            )
             Surface(
                 modifier = Modifier
                     .weight(1f)
@@ -400,10 +418,8 @@ private fun ViewerScreen(
                 maxLines = 3,
                 shape = MaterialTheme.shapes.extraLarge,
             )
-            val events = remember(ocrText) { ocrText?.let(EventParser::parse).orEmpty() }
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ReminderChip(remindAt, onRemind)
-                CalendarChip(events)
             }
             if (hasNote) NoteCard(player) else FilledTonalButton(onClick = onRecordNote, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Rounded.Mic, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -529,44 +545,56 @@ private fun TextSheet(
     }
 }
 
-/** Shown when the text in the screenshot holds an event. One event opens the calendar straight away, several ask which. */
+/**
+ * Slides in from the top once the text has been read and holds an event: add it to the calendars, or set an alarm for it.
+ * Several events? "Add" adds them all; the alarm is for the first one still ahead.
+ */
 @Composable
-private fun CalendarChip(events: List<CalendarEvent>) {
-    val context = LocalContext.current
-    var open by remember { mutableStateOf(false) }
-    fun add(e: CalendarEvent) {
-        try {
-            context.startActivity(e.toIntent())
-        } catch (_: ActivityNotFoundException) {
-            Toast.makeText(context, "No calendar app found", Toast.LENGTH_SHORT).show()
-        }
-    }
-    // Slides in once the text has been read and an event turned up.
-    AnimatedVisibility(events.isNotEmpty(), enter = expandHorizontally() + fadeIn(), exit = shrinkHorizontally() + fadeOut()) {
-        Box {
-            AssistChip(
-                onClick = { if (events.size == 1) add(events[0]) else open = true },
-                leadingIcon = { Icon(Icons.Rounded.Event, contentDescription = null) },
-                label = { Text("Add to calendar") },
-            )
-            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                events.forEach { e ->
-                    // All-day events are stored as UTC midnights, so they are shown in UTC too.
-                    val flags = DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_ALL or
-                        if (e.allDay) DateUtils.FORMAT_UTC else DateUtils.FORMAT_SHOW_TIME
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(e.title)
-                                Text(
-                                    DateUtils.formatDateTime(context, e.start, flags),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+private fun EventPrompt(events: List<CalendarEvent>, onAdd: () -> Unit, onRemind: (CalendarEvent, ReminderOption) -> Unit) {
+    var dismissed by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
+    val now = remember(events) { System.currentTimeMillis() }
+    val main = remember(events) { events.firstOrNull { it.end >= now } ?: events.firstOrNull() }
+    AnimatedVisibility(
+        visible = main != null && !dismissed,
+        enter = slideInVertically(tween(450)) { -it } + expandVertically(tween(450)) + fadeIn(tween(450)),
+        exit = slideOutVertically(tween(300)) { -it } + shrinkVertically(tween(300)) + fadeOut(tween(300)),
+    ) {
+        main?.let { e ->
+            Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) {
+                Column(Modifier.padding(start = 20.dp, top = 12.dp, end = 8.dp, bottom = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (events.size > 1) "${e.title} (+${events.size - 1} more)" else e.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(e.whenText(), style = MaterialTheme.typography.bodyMedium)
+                        }
+                        IconButton(onClick = { dismissed = true }) { Icon(Icons.Rounded.Close, contentDescription = "Dismiss") }
+                    }
+                    Row(Modifier.padding(top = 8.dp, end = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onAdd) {
+                            Icon(Icons.Rounded.Event, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text(if (events.size > 1) "Add ${events.size} to calendar" else "Add to calendar", Modifier.padding(start = 8.dp))
+                        }
+                        val options = e.reminderOptions()
+                        if (options.isNotEmpty()) {
+                            Box {
+                                FilledTonalButton(onClick = { menu = true }) {
+                                    Icon(Icons.Rounded.Alarm, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Text("Remind me", Modifier.padding(start = 8.dp))
+                                }
+                                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                    options.forEach { o ->
+                                        DropdownMenuItem(text = { Text(o.label) }, onClick = { menu = false; onRemind(e, o) })
+                                    }
+                                }
                             }
-                        },
-                        onClick = { open = false; add(e) },
-                    )
+                        }
+                    }
                 }
             }
         }
