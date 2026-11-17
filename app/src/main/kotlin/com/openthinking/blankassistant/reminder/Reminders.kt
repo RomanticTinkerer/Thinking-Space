@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.net.Uri
 import android.text.format.DateUtils
 import java.util.Calendar
@@ -15,11 +17,11 @@ import com.openthinking.blankassistant.ViewerActivity
 import com.openthinking.blankassistant.storage.MemoryMeta
 
 /**
- * "Remind me about this screenshot": one inexact alarm per screenshot that posts a notification
- * opening it. ponytail: alarms don't survive a reboot; re-arm from [MemoryMeta] on BOOT_COMPLETED if that matters.
+ * "Remind me about this screenshot": one alarm per screenshot, set like a clock alarm (exact, shown in the
+ * status bar, fires in Doze), that posts a notification with the alarm sound opening it. ponytail: alarms don't survive a reboot; re-arm from [MemoryMeta] on BOOT_COMPLETED if that matters.
  */
 object Reminders {
-    private const val CHANNEL_ID = "reminders"
+    private const val CHANNEL_ID = "alarms" // "reminders" was a quiet channel; sound can't be changed on an existing one
     private const val EXTRA_BASE = "base"
 
     fun hoursFromNow(h: Int) = System.currentTimeMillis() + h * DateUtils.HOUR_IN_MILLIS
@@ -38,8 +40,12 @@ object Reminders {
     }
 
     fun schedule(context: Context, image: Uri, base: String, at: Long) {
+        val show = PendingIntent.getActivity(
+            context, base.hashCode(), Intent(context, ViewerActivity::class.java).setData(image),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
         context.getSystemService(AlarmManager::class.java)
-            .setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, alarmIntent(context, image, base))
+            .setAlarmClock(AlarmManager.AlarmClockInfo(at, show), alarmIntent(context, image, base))
         MemoryMeta(context).setReminderAt(base, at)
     }
 
@@ -59,7 +65,13 @@ object Reminders {
     internal fun notify(context: Context, image: Uri, base: String) {
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_reminders), NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_reminders), NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
+                    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build(),
+                )
+                enableVibration(true)
+            },
         )
         val open = PendingIntent.getActivity(
             context,
