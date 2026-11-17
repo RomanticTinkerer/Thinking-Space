@@ -11,8 +11,8 @@ class MemoryMeta(context: Context) {
 
     init {
         // Text from older readers is poorer. Drop it so those screenshots get scanned again.
-        // Bump the "ocr4:" key whenever the reader gets better.
-        prefs.all.keys.filter { it.startsWith("ocr") && !it.startsWith("ocr4:") }.takeIf { it.isNotEmpty() }
+        // Bump the "ocr5:" key whenever the reader gets better.
+        prefs.all.keys.filter { it.startsWith("ocr") && !it.startsWith("ocr5:") }.takeIf { it.isNotEmpty() }
             ?.let { old -> prefs.edit().apply { old.forEach(::remove) }.apply() }
     }
 
@@ -36,12 +36,12 @@ class MemoryMeta(context: Context) {
     }.apply()
 
     /** Text OCR found in the image. null = not scanned yet, "" = scanned and nothing found. */
-    fun ocr(base: String): String? = prefs.getString("ocr4:$base", null)
+    fun ocr(base: String): String? = prefs.getString("ocr5:$base", null)
 
-    fun setOcr(base: String, text: String) = prefs.edit().putString("ocr4:$base", text).apply()
+    fun setOcr(base: String, text: String) = prefs.edit().putString("ocr5:$base", text).apply()
 
     /** Forget all OCR text, so the gallery reads every screenshot again. */
-    fun clearOcr() = prefs.edit().apply { prefs.all.keys.filter { it.startsWith("ocr4:") }.forEach(::remove) }.apply()
+    fun clearOcr() = prefs.edit().apply { prefs.all.keys.filter { it.startsWith("ocr5:") }.forEach(::remove) }.apply()
 
     /** What the voice note says. null = not transcribed yet, "" = transcribed and silent. */
     fun transcript(base: String): String? = prefs.getString("tr:$base", null)
@@ -51,5 +51,5 @@ class MemoryMeta(context: Context) {
     fun clearTranscript(base: String) = prefs.edit().remove("tr:$base").apply()
 
     fun forget(base: String) = prefs.edit()
-        .remove("cap:$base").remove("pin:$base").remove("rem:$base").remove("ocr4:$base").remove("tr:$base").apply()
+        .remove("cap:$base").remove("pin:$base").remove("rem:$base").remove("ocr5:$base").remove("tr:$base").apply()
 }

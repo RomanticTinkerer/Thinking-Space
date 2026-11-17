@@ -39,7 +39,9 @@ class TextReader(context: Context) : Closeable {
     fun read(bitmap: Bitmap): String {
         val m = models ?: return ""
         return try {
-            layout(find(m, bitmap).mapNotNull { recognise(m, bitmap, it) })
+            // On a phone screenshot the top strip is the status bar (clock, signal, battery): not content.
+            val top = if (bitmap.height >= 1.7f * bitmap.width) STATUS_BAR_FRACTION * bitmap.height else 0f
+            layout(find(m, bitmap).filter { it[3] >= top }.mapNotNull { recognise(m, bitmap, it) })
         } catch (e: Throwable) {
             // ponytail: an image that blows up (say, out of memory) is stored as "no text"; "Read again" retries it
             Timber.e(e, "OCR failed")
@@ -229,6 +231,7 @@ class TextReader(context: Context) : Closeable {
 
     companion object {
         private const val MIN_EDGE = 960 // tiny images are enlarged, the detector needs text above about 10 px
+        private const val STATUS_BAR_FRACTION = 0.045f
         private const val MAX_EDGE = 2560 // keeps very tall screenshots from eating memory
         private val DET_MEAN = floatArrayOf(0.485f, 0.456f, 0.406f)
         private val DET_STD = floatArrayOf(0.229f, 0.224f, 0.225f)
